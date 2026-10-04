@@ -46,7 +46,7 @@
     "autoprefixer": "^10.4.19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
-    "markdownlint-cli2": "^0.22.0",
+    "markdownlint-cli2": "^0.23.2",
     "markdownlint-rule-relative-links": "^5.1.0",
     "postcss": "^8.5.10",
     "prettier": "^3.8.0",
