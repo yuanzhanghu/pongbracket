@@ -45,3 +45,24 @@ def test_elimination_input_updates() -> None:
             }
         ),
     }
+
+
+def test_elimination_input_updates_without_match_ids_filter() -> None:
+    """With match_ids=None (whole-stage-item recomputation, e.g. walkover propagation on
+    stage activation), unchanged current-round matches must not be returned: writing them
+    back would overwrite DB rows with stale in-memory values in later per-round passes."""
+    tournament_id = TournamentId(-1)
+    stage_item_inputs = get_stage_item_inputs_mock(tournament_id)
+    matches = get_2_definitive_and_2_tentative_matches_mock(stage_item_inputs)
+    rounds = [
+        get_one_round_with_two_definitive_matches(matches[0], matches[1]),
+        *get_two_round_with_one_tentative_match_each(matches[2], matches[3]),
+    ]
+
+    updates = get_inputs_to_update_in_subsequent_elimination_rounds(
+        RoundId(-3),
+        get_stage_item_mock(stage_item_inputs, rounds),
+        None,
+    )
+
+    assert set(updates) == {matches[2].id, matches[3].id}

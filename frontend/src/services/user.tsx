@@ -1,5 +1,16 @@
-import { UserToRegister, UserToUpdate } from '@openapi';
+import useSWR, { SWRResponse } from 'swr';
+
+import { AdminUserListResponse, UserToRegister, UserToUpdate } from '@openapi';
 import { createAxios, handleRequestError } from './adapter';
+
+const fetcher = (url: string) =>
+  createAxios()
+    .get(url)
+    .then((res: { data: any }) => res.data);
+
+export function getAdminUsers(): SWRResponse<AdminUserListResponse> {
+  return useSWR('users', fetcher);
+}
 
 export async function performLogin(username: string, password: string) {
   const bodyFormData = new FormData();
@@ -45,7 +56,7 @@ export async function registerUser(user: UserToRegister, captchaToken: string | 
       email: user.email,
       name: user.name,
       password: user.password,
-      captcha_token: captchaToken,
+      captcha_token: captchaToken ?? '',
     })
     .catch((response: any) => handleRequestError(response));
 }
@@ -53,7 +64,7 @@ export async function registerUser(user: UserToRegister, captchaToken: string | 
 export async function registerDemoUser(captchaToken: string | null) {
   return createAxios()
     .post('users/register_demo', {
-      captcha_token: captchaToken,
+      captcha_token: captchaToken ?? '',
     })
     .catch((response: any) => handleRequestError(response));
 }

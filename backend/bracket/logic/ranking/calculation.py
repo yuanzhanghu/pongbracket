@@ -1,8 +1,8 @@
-import math
 from collections import defaultdict
 from decimal import Decimal
+from typing import Any
 
-from bracket.logic.ranking.statistics import START_ELO, TeamStatistics
+from bracket.logic.ranking.statistics import TeamStatistics
 from bracket.models.db.match import MatchWithDetailsDefinitive
 from bracket.models.db.ranking import Ranking
 from bracket.models.db.stage_item import StageType
@@ -11,8 +11,23 @@ from bracket.sql.rankings import get_ranking_for_stage_item
 from bracket.sql.teams import update_team_stats
 from bracket.utils.id_types import StageItemInputId, TournamentId
 
-K = 32
-D = 400
+
+def _match_has_result(match: MatchWithDetailsDefinitive) -> bool:
+    """Whether a match has actually been played / decided, so it should count
+    toward the standings.
+
+    An unplayed match has no forfeit and a 0-0 score (no games scored yet). It
+    must NOT contribute to the ranking — otherwise every not-yet-played match is
+    miscounted as a 0-0 draw, handing draw_points to BOTH sides, so teams that
+    have not competed (or not played a single match) appear on the leaderboard
+    with points. A genuine drawn match (e.g. a 1-1 games split) has a non-zero
+    score and is correctly included.
+    """
+    return (
+        match.forfeit_input is not None
+        or match.stage_item_input1_score != 0
+        or match.stage_item_input2_score != 0
+    )
 
 
 def set_statistics_for_stage_item_input(
@@ -24,6 +39,26 @@ def set_statistics_for_stage_item_input(
     stage_item: StageItemWithRounds,
 ) -> None:
     is_team1 = team_index == 0
+
+    # Forfeit: the non-forfeiting side wins (win_points), the forfeiting side gets 0.
+    # The match score stays 0-0, so games (局分) / points (小分) are unaffected and
+    # add_score_points contributes nothing.
+    if match.forfeit_input is not None:
+        this_side = 1 if is_team1 else 2
+        if match.forfeit_input == this_side:
+            stats[stage_item_input_id].losses += 1
+            score_diff = Decimal("0")
+        else:
+            stats[stage_item_input_id].wins += 1
+            score_diff = ranking.win_points
+
+        match stage_item.type:
+            case StageType.ROUND_ROBIN | StageType.SINGLE_ELIMINATION:
+                stats[stage_item_input_id].points += score_diff
+            case _:
+                raise ValueError(f"Unsupported stage type: {stage_item.type}")
+        return
+
     team_score = match.stage_item_input1_score if is_team1 else match.stage_item_input2_score
     was_draw = match.stage_item_input1_score == match.stage_item_input2_score
     has_won = not was_draw and team_score == max(
@@ -32,29 +67,20 @@ def set_statistics_for_stage_item_input(
 
     if has_won:
         stats[stage_item_input_id].wins += 1
-        swiss_score_diff = ranking.win_points
+        score_diff = ranking.win_points
     elif was_draw:
         stats[stage_item_input_id].draws += 1
-        swiss_score_diff = ranking.draw_points
+        score_diff = ranking.draw_points
     else:
         stats[stage_item_input_id].losses += 1
-        swiss_score_diff = ranking.loss_points
+        score_diff = ranking.loss_points
 
     if ranking.add_score_points:
-        swiss_score_diff += (
-            match.stage_item_input1_score if is_team1 else match.stage_item_input2_score
-        )
+        score_diff += match.stage_item_input1_score if is_team1 else match.stage_item_input2_score
 
     match stage_item.type:
         case StageType.ROUND_ROBIN | StageType.SINGLE_ELIMINATION:
-            stats[stage_item_input_id].points += swiss_score_diff
-
-        case StageType.SWISS:
-            rating_diff = (match.stage_item_input2.elo - match.stage_item_input1.elo) * (
-                1 if is_team1 else -1
-            )
-            expected_score = Decimal(1.0 / (1.0 + math.pow(10.0, rating_diff / D)))
-            stats[stage_item_input_id].points += int(K * (swiss_score_diff - expected_score))
+            stats[stage_item_input_id].points += score_diff
 
         case _:
             raise ValueError(f"Unsupported stage type: {stage_item.type}")
@@ -66,16 +92,19 @@ def determine_ranking_for_stage_item(
 ) -> defaultdict[StageItemInputId, TeamStatistics]:
     input_x_stats: defaultdict[StageItemInputId, TeamStatistics] = defaultdict(TeamStatistics)
 
-    if stage_item.type is StageType.SWISS:
-        for input_ in stage_item.inputs:
-            input_x_stats[input_.id].points = START_ELO
+    # Seed every input with zero stats so participants that have not played a match yet
+    # still appear in the ranking (with 0 points, not phantom draws). Without this, a team
+    # whose matches are all unplayed vanishes from the ranking entirely, which also breaks
+    # resolving the tentative inputs of a following stage to a team in seed order.
+    for stage_item_input in stage_item.inputs:
+        _ = input_x_stats[stage_item_input.id]
 
     matches = [
         match
         for round_ in stage_item.rounds
         if not round_.is_draft
         for match in round_.matches
-        if isinstance(match, MatchWithDetailsDefinitive)
+        if isinstance(match, MatchWithDetailsDefinitive) and _match_has_result(match)
     ]
     for match in matches:
         for team_index, stage_item_input in enumerate(match.stage_item_inputs):
@@ -95,8 +124,82 @@ def determine_team_ranking_for_stage_item(
     stage_item: StageItemWithRounds,
     ranking: Ranking,
 ) -> list[tuple[StageItemInputId, TeamStatistics]]:
+    """
+    Rank the inputs of a stage item.
+
+    Primary key is the accumulated points (one point per win by default). Inputs that are
+    tied on points are re-ranked with the table-tennis group rules, applied among the tied
+    players only: head-to-head wins -> games (局分) ratio -> points (小分) ratio.
+    """
     team_ranking = determine_ranking_for_stage_item(stage_item, ranking)
-    return sorted(team_ranking.items(), key=lambda x: x[1].points, reverse=True)
+
+    matches = [
+        match
+        for round_ in stage_item.rounds
+        if not round_.is_draft
+        for match in round_.matches
+        if isinstance(match, MatchWithDetailsDefinitive) and _match_has_result(match)
+    ]
+
+    def submetrics(ids: set[StageItemInputId]) -> Any:
+        wins = {i: 0 for i in ids}
+        games_won = {i: 0 for i in ids}
+        games_lost = {i: 0 for i in ids}
+        points_won = {i: 0 for i in ids}
+        points_lost = {i: 0 for i in ids}
+        for match in matches:
+            id1 = match.stage_item_inputs[0].id
+            id2 = match.stage_item_inputs[1].id
+            if id1 not in ids or id2 not in ids:
+                continue
+            s1 = match.stage_item_input1_score
+            s2 = match.stage_item_input2_score
+            games_won[id1] += s1
+            games_lost[id1] += s2
+            games_won[id2] += s2
+            games_lost[id2] += s1
+            if s1 > s2:
+                wins[id1] += 1
+            elif s2 > s1:
+                wins[id2] += 1
+            if match.games:
+                p1 = sum(g[0] for g in match.games if len(g) == 2)
+                p2 = sum(g[1] for g in match.games if len(g) == 2)
+                points_won[id1] += p1
+                points_lost[id1] += p2
+                points_won[id2] += p2
+                points_lost[id2] += p1
+        return wins, games_won, games_lost, points_won, points_lost
+
+    def ratio(won: int, lost: int) -> float:
+        if lost > 0:
+            return won / lost
+        return float("inf") if won > 0 else 0.0
+
+    items = sorted(team_ranking.items(), key=lambda x: x[1].points, reverse=True)
+
+    result: list[tuple[StageItemInputId, TeamStatistics]] = []
+    idx = 0
+    while idx < len(items):
+        end = idx
+        while end < len(items) and items[end][1].points == items[idx][1].points:
+            end += 1
+        cluster = items[idx:end]
+        if len(cluster) > 1:
+            ids = {input_id for input_id, _ in cluster}
+            wins, games_won, games_lost, points_won, points_lost = submetrics(ids)
+            cluster.sort(
+                key=lambda c: (
+                    wins[c[0]],
+                    ratio(games_won[c[0]], games_lost[c[0]]),
+                    ratio(points_won[c[0]], points_lost[c[0]]),
+                ),
+                reverse=True,
+            )
+        result.extend(cluster)
+        idx = end
+
+    return result
 
 
 async def recalculate_ranking_for_stage_item(

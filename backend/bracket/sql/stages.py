@@ -76,9 +76,13 @@ async def get_full_tournament_details(
             {stage_item_filter}
             GROUP BY stage_items.id
         ), stage_items_with_inputs AS (
+            -- Order the inputs by slot: it is the seeding position (snake grouping
+            -- fills slot 1..N strongest first), and the round-robin grid renders its
+            -- rows in array order. Without the ORDER BY the order is whatever the
+            -- join plan happens to emit, so it can flip between fetches.
             SELECT DISTINCT ON (stage_items.id)
                 stage_items.id,
-                to_json(array_agg(sii)) AS inputs
+                to_json(array_agg(sii ORDER BY sii.slot)) AS inputs
             FROM stage_items
             LEFT JOIN inputs_with_teams sii ON stage_items.id = sii.stage_item_id
             WHERE sii.tournament_id = :tournament_id
@@ -92,7 +96,9 @@ async def get_full_tournament_details(
             LEFT JOIN stage_items_with_inputs ON stage_items_with_inputs.id = stage_items.id
             ORDER BY stage_items.name
         )
-        SELECT stages.*, to_json(array_agg(r.*)) AS stage_items
+        -- Same for the stage items: ordered by id, i.e. creation order (小组1, 小组2,
+        -- ...), which the results page renders top to bottom.
+        SELECT stages.*, to_json(array_agg(r.* ORDER BY r.id)) AS stage_items
         FROM stages
         LEFT JOIN stage_items_with_rounds_and_inputs r on stages.id = r.stage_id
         {stage_item_filter_join}
@@ -132,7 +138,7 @@ async def sql_delete_stage(tournament_id: TournamentId, stage_id: StageId) -> No
         )
 
 
-async def sql_create_stage(tournament_id: TournamentId) -> Stage:
+async def sql_create_stage(tournament_id: TournamentId, name: str = "Stage") -> Stage:
     query = """
         INSERT INTO stages (created, is_active, name, tournament_id)
         VALUES (NOW(), false, :name, :tournament_id)
@@ -140,7 +146,7 @@ async def sql_create_stage(tournament_id: TournamentId) -> Stage:
         """
     result = await database.fetch_one(
         query=query,
-        values={"tournament_id": tournament_id, "name": "Stage"},
+        values={"tournament_id": tournament_id, "name": name},
     )
 
     if result is None:

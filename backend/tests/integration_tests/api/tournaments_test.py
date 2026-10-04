@@ -6,10 +6,16 @@ import pytest
 from bracket.database import database
 from bracket.logic.tournaments import sql_delete_tournament_completely
 from bracket.models.db.tournament import Tournament, TournamentStatus
-from bracket.schema import tournaments
+from bracket.schema import players, tournaments
 from bracket.sql.tournaments import sql_delete_tournament, sql_get_tournament_by_endpoint_name
 from bracket.utils.db import fetch_one_parsed_certain
-from bracket.utils.dummy_records import DUMMY_MOCK_TIME, DUMMY_TOURNAMENT
+from bracket.utils.dummy_records import (
+    DUMMY_MOCK_TIME,
+    DUMMY_PLAYER1,
+    DUMMY_STAGE1,
+    DUMMY_STAGE_ITEM1,
+    DUMMY_TOURNAMENT,
+)
 from bracket.utils.http import HTTPMethod
 from bracket.utils.types import assert_some
 from tests.integration_tests.api.shared import (
@@ -19,7 +25,12 @@ from tests.integration_tests.api.shared import (
     send_tournament_request,
 )
 from tests.integration_tests.models import AuthContext
-from tests.integration_tests.sql import inserted_tournament
+from tests.integration_tests.sql import (
+    inserted_player,
+    inserted_stage,
+    inserted_stage_item,
+    inserted_tournament,
+)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -42,6 +53,11 @@ async def test_tournaments_endpoint(
                 "duration_minutes": 10,
                 "margin_minutes": 5,
                 "status": "OPEN",
+                "is_individual": False,
+                "rating_category_id": None,
+                "settled_seq": None,
+                "settled_at": None,
+                "settlement_requested_at": None,
             }
         ],
     }
@@ -68,6 +84,11 @@ async def test_tournament_endpoint(
             "duration_minutes": 10,
             "margin_minutes": 5,
             "status": "OPEN",
+            "is_individual": False,
+            "rating_category_id": None,
+            "settled_seq": None,
+            "settled_at": None,
+            "settlement_requested_at": None,
         },
     }
 
@@ -99,6 +120,24 @@ async def test_create_tournament(
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_create_tournament_duplicate_name_rejected(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    body = {
+        "name": auth_context.tournament.name,
+        "start_time": DUMMY_MOCK_TIME.isoformat().replace("+00:00", "Z"),
+        "club_id": auth_context.club.id,
+        "dashboard_public": True,
+        "players_can_be_in_multiple_teams": True,
+        "auto_assign_courts": True,
+        "duration_minutes": 12,
+        "margin_minutes": 3,
+    }
+    response = await send_auth_request(HTTPMethod.POST, "tournaments", auth_context, json=body)
+    assert response == {"detail": f"比赛名“{auth_context.tournament.name}”已存在"}
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_create_tournament_duplicate_dashboard_endpoint(
     startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
 ) -> None:
@@ -114,7 +153,7 @@ async def test_create_tournament_duplicate_dashboard_endpoint(
         "margin_minutes": 3,
     }
     assert await send_auth_request(HTTPMethod.POST, "tournaments", auth_context, json=body) == {
-        "detail": "This dashboard link is already taken"
+        "detail": "该仪表板链接已被占用"
     }
 
 
@@ -149,6 +188,10 @@ async def test_archive_and_unarchive_tournament(
     startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
 ) -> None:
     query = tournaments.select().where(tournaments.c.id == auth_context.tournament.id)
+    # Archiving freezes writes but leaves the tournament as shared as it was:
+    # spectators holding the results link must not lose it the moment the
+    # organiser archives, so dashboard_public is captured and compared, never set.
+    was_public = (await fetch_one_parsed_certain(database, Tournament, query)).dashboard_public
     body = {"status": "ARCHIVED"}
     assert (
         await send_tournament_request(HTTPMethod.POST, "change-status", auth_context, json=body)
@@ -156,12 +199,12 @@ async def test_archive_and_unarchive_tournament(
     )
     updated_tournament = await fetch_one_parsed_certain(database, Tournament, query)
     assert updated_tournament.status is TournamentStatus.ARCHIVED
-    assert updated_tournament.dashboard_public is False
+    assert updated_tournament.dashboard_public is was_public
 
     # Archiving twice is not allowed
     assert await send_tournament_request(
         HTTPMethod.POST, "change-status", auth_context, json=body
-    ) == {"detail": "Tournament already has the requested status"}
+    ) == {"detail": "比赛已处于该状态"}
 
     # Unarchive the tournament
     body = {"status": "OPEN"}
@@ -171,7 +214,7 @@ async def test_archive_and_unarchive_tournament(
     )
     updated_tournament = await fetch_one_parsed_certain(database, Tournament, query)
     assert updated_tournament.status is TournamentStatus.OPEN
-    assert updated_tournament.dashboard_public is False
+    assert updated_tournament.dashboard_public is was_public
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -193,6 +236,76 @@ async def test_delete_tournament(
         )
 
     await sql_delete_tournament(tournament_inserted.id)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_delete_tournament_with_leftover_players(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    # Players are not manageable on their own, so a leftover one must not block the
+    # deletion with a "delete the members first" error nobody can act on.
+    async with inserted_tournament(
+        DUMMY_TOURNAMENT.model_copy(
+            update={"club_id": auth_context.club.id, "dashboard_endpoint": None}
+        )
+    ) as tournament_inserted:
+        async with inserted_player(
+            DUMMY_PLAYER1.model_copy(update={"tournament_id": tournament_inserted.id})
+        ):
+            assert (
+                await send_tournament_request(
+                    HTTPMethod.DELETE,
+                    "",
+                    auth_context.model_copy(update={"tournament": tournament_inserted}),
+                )
+                == SUCCESS_RESPONSE
+            )
+
+        assert await database.fetch_all(query=players.select()) == []
+
+    await sql_delete_tournament(tournament_inserted.id)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_delete_tournament_keeps_players_when_blocked(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    # If something else still blocks the deletion, the players must be rolled back
+    # rather than silently destroyed by a failed delete.
+    async with (
+        inserted_stage(
+            DUMMY_STAGE1.model_copy(update={"tournament_id": auth_context.tournament.id})
+        ),
+        inserted_player(
+            DUMMY_PLAYER1.model_copy(update={"tournament_id": auth_context.tournament.id})
+        ) as player_inserted,
+    ):
+        response = await send_tournament_request(HTTPMethod.DELETE, "", auth_context)
+        assert response == {"detail": "该比赛还有阶段，请先删除阶段"}
+
+        remaining = await database.fetch_all(query=players.select())
+        assert [player["id"] for player in remaining] == [player_inserted.id]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_delete_tournament_with_ranked_stage_item_gives_clean_error(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    # A stage item referencing a ranking (e.g. round-robin groups) must not make tournament
+    # deletion crash with a 500; it should return the same clean "delete stages first" guard.
+    async with (
+        inserted_stage(
+            DUMMY_STAGE1.model_copy(update={"tournament_id": auth_context.tournament.id})
+        ) as stage_inserted,
+        inserted_stage_item(
+            DUMMY_STAGE_ITEM1.model_copy(
+                update={"stage_id": stage_inserted.id, "ranking_id": auth_context.ranking.id}
+            )
+        ),
+    ):
+        response = await send_tournament_request(HTTPMethod.DELETE, "", auth_context)
+
+    assert response == {"detail": "该比赛还有阶段，请先删除阶段"}
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -228,9 +341,7 @@ async def test_tournament_upload_and_remove_logo(
     )
 
 
-UNAUTHORIZED_RESPONSE = {
-    "detail": "Could not validate credentials or page is not publicly available"
-}
+UNAUTHORIZED_RESPONSE = {"detail": "登录状态无效，或该页面未公开"}
 
 
 @pytest.mark.asyncio(loop_scope="session")

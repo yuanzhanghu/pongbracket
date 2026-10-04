@@ -9,6 +9,7 @@ import { SWRResponse } from 'swr';
 import RequestErrorAlert from '@components/utils/error_alert';
 import { GenericSkeleton } from '@components/utils/skeletons';
 import { formatStageItemInput } from '@components/utils/stage_item_input';
+import { useTeamNamingContext } from '@components/utils/team_naming';
 import { StageItemInputUpdate, StageRankingResponse, StagesWithStageItemsResponse } from '@openapi';
 import { getStageItemLookup } from '@services/lookups';
 import { activateNextStage } from '@services/stage';
@@ -71,12 +72,15 @@ export default function ActivateNextStageModal({
   tournamentId,
   swrStagesResponse,
   swrRankingsPerStageItemResponse,
+  disabled = false,
 }: {
   tournamentId: number;
   swrStagesResponse: SWRResponse<StagesWithStageItemsResponse>;
   swrRankingsPerStageItemResponse: SWRResponse<StageRankingResponse>;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  const teamContext = useTeamNamingContext(tournamentId);
   const [opened, setOpened] = useState(false);
   const stageItemsLookup = getStageItemLookup(swrStagesResponse);
 
@@ -100,7 +104,7 @@ export default function ActivateNextStageModal({
           })}
         >
           <Alert icon={<IconAlertCircle size={16} />} color="gray" radius="lg">
-            {t('active_next_stage_modal_description')}
+            {t('active_next_stage_modal_description', { context: teamContext })}
           </Alert>
 
           <Container mt="1rem">
@@ -127,6 +131,7 @@ export default function ActivateNextStageModal({
         size="md"
         mb="10"
         color="indigo"
+        disabled={disabled}
         leftSection={<IconSquareArrowRight size={24} />}
         onClick={async () => {
           setOpened(true);

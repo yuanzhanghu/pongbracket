@@ -1,8 +1,8 @@
 import { createAxios, handleRequestError } from './adapter';
 
-export async function createStage(tournament_id: number) {
+export async function createStage(tournament_id: number, name: string) {
   return createAxios()
-    .post(`tournaments/${tournament_id}/stages`)
+    .post(`tournaments/${tournament_id}/stages`, { name })
     .catch((response: any) => handleRequestError(response));
 }
 

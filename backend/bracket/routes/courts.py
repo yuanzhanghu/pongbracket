@@ -18,6 +18,7 @@ from bracket.schema import courts
 from bracket.sql.courts import get_all_courts_in_tournament, sql_delete_court, update_court
 from bracket.sql.stages import get_full_tournament_details
 from bracket.utils.db import fetch_one_parsed
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import CourtId, TournamentId
 from bracket.utils.types import assert_some
 
@@ -77,7 +78,9 @@ async def delete_court(
     if used_in_matches_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not delete court since it's used by {used_in_matches_count} matches",
+            detail=tr("该场地已被 {count} 场对阵使用，无法删除").format(
+                count=used_in_matches_count
+            ),
         )
 
     await sql_delete_court(tournament_id, court_id)

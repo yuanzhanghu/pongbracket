@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>简单使用指南</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+         background:#f4f6fa; color:#1d2733; line-height:1.6; }
+  header { background:linear-gradient(135deg,#334155,#0f172a); color:#fff; padding:2.4rem 1.5rem; }
+  header .wrap { max-width:960px; margin:0 auto; }
+  header h1 { margin:0 0 .4rem; font-size:1.9rem; }
+  header p { margin:0; opacity:.9; }
+  main { max-width:960px; margin:0 auto; padding:1.6rem 1.5rem 2rem; }
+  .lead { color:#475569; margin:.4rem 0 1.4rem; }
+  .cards { display:grid; grid-template-columns:1fr 1fr; gap:1.2rem; }
+  @media (max-width:720px){ .cards { grid-template-columns:1fr; } }
+  .card { display:flex; flex-direction:column; background:#fff; border:1px solid #e2e8f0;
+          border-radius:14px; padding:1.4rem 1.5rem 1.5rem; text-decoration:none; color:inherit;
+          box-shadow:0 1px 3px rgba(16,24,40,.05); transition:transform .12s ease, box-shadow .12s ease; }
+  .card:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(16,24,40,.12); }
+  .card .tag { align-self:flex-start; font-size:.78rem; font-weight:600; padding:.15rem .6rem;
+               border-radius:999px; margin-bottom:.8rem; }
+  .card h2 { margin:.1rem 0 .5rem; font-size:1.3rem; }
+  .card p { margin:0 0 1rem; color:#475569; font-size:.95rem; }
+  .card .go { margin-top:auto; font-weight:600; }
+  .card.basic .tag { background:#e7f6ef; color:#0a6b53; }
+  .card.basic h2, .card.basic .go { color:#0f9d6b; }
+  .card.rating .tag { background:#e7effe; color:#0a3d8f; }
+  .card.rating h2, .card.rating .go { color:#1f6feb; }
+  footer { max-width:960px; margin:0 auto; padding:1.4rem 1.5rem 3rem; color:#94a3b8; font-size:.85rem; }
+  footer a { color:#64748b; text-decoration:none; }
+  .langbar { max-width:960px; margin:0 auto; display:flex; justify-content:flex-end; gap:.4rem;
+             padding:.9rem 1.5rem 0; }
+  .langbar button { font: inherit; font-size:.85rem; padding:.2rem .7rem; border-radius:999px;
+                    border:1px solid #cbd5e1; background:#fff; color:#475569; cursor:pointer; }
+  .langbar button[aria-current="true"] { background:#0f172a; border-color:#0f172a; color:#fff; }
+</style>
+</head>
+<body>
+<div class="langbar" id="langbar"></div>
+<header><div class="wrap">
+  <h1 data-i18n="title"></h1>
+  <p data-i18n="subtitle"></p>
+</div></header>
+<main>
+  <p class="lead" data-i18n="lead"></p>
+  <div class="cards">
+    <a class="card basic" id="card-basic" href="/guide/basic.html">
+      <span class="tag" data-i18n="basic_tag"></span>
+      <h2 data-i18n="basic_title"></h2>
+      <p data-i18n="basic_desc"></p>
+      <span class="go" data-i18n="go"></span>
+    </a>
+    <a class="card rating" id="card-rating" href="/guide/rating.html">
+      <span class="tag" data-i18n="rating_tag"></span>
+      <h2 data-i18n="rating_title"></h2>
+      <p data-i18n="rating_desc"></p>
+      <span class="go" data-i18n="go"></span>
+    </a>
+  </div>
+</main>
+<footer><a href="/" data-i18n="back_home"></a></footer>
+<script>
+// Standalone page (not part of the React bundle), so it carries its own copies of
+// the strings. It shares the language with the app via i18next's localStorage key,
+// and honours an explicit ?lng= just like the app does.
+// 加华积分网 is a brand; en/fr keep the same romanised rendering the app's own
+// catalogues use (see the `site_name` / `welcome_title` keys).
+var SITE = { zh: '加华积分网', en: 'Jiahua Rating Network', fr: 'Jiahua Rating Network' };
+var STRINGS = {
+  zh: {
+    title: '简单使用指南',
+    subtitle: '选择一种赛事类型，查看从建赛到出结果的完整界面走查。',
+    lead_html: '加华积分网支持两种个人赛流程。先想清楚这次比赛<strong>是否需要计入积分</strong>，再点开对应的演示。',
+    basic_tag: '不计积分',
+    basic_title: '个人赛（非积分）流程',
+    basic_desc: '普通个人赛，赛后不产生或结算任何积分。建赛 → 参赛 → 安排赛程 → 一键记分 → 最终排名，一气呵成。适合友谊赛、内部赛、临时活动。',
+    rating_tag: '计入积分',
+    rating_title: '个人积分赛流程',
+    rating_desc: '比赛结果计入跨赛事等级分（加华积分）。额外包含设置初始分、申请积分结算、管理员审核与积分排行榜。适合正式的积分赛事。',
+    go: '查看流程 →',
+    back_home: '← 返回系统首页',
+  },
+  en: {
+    title: 'Quick start guide',
+    subtitle: 'Pick a tournament type to see a full walkthrough, from setup to final results.',
+    lead_html: 'Jiahua Rating Network supports two kinds of individual tournament. Decide first whether this one <strong>should count towards ratings</strong>, then open the matching walkthrough.',
+    basic_tag: 'No rating',
+    basic_title: 'Individual tournament (unrated)',
+    basic_desc: 'A regular individual tournament that neither produces nor settles any rating. Create it, let players join, schedule the matches, score with one tap, and finish on the final standings. Ideal for friendlies, club nights and one-off events.',
+    rating_tag: 'Counts towards rating',
+    rating_title: 'Rated individual tournament',
+    rating_desc: 'Results count towards the cross-tournament rating. Adds initial-rating setup, requesting settlement, admin review and the rating leaderboard. Ideal for official rated events.',
+    go: 'View the walkthrough →',
+    back_home: '← Back to the home page',
+  },
+  fr: {
+    title: 'Guide de démarrage',
+    subtitle: 'Choisissez un type de tournoi pour voir la procédure complète, de la création aux résultats.',
+    lead_html: 'Jiahua Rating Network propose deux types de tournois individuels. Déterminez d’abord si celui-ci <strong>doit compter pour le classement</strong>, puis ouvrez la démonstration correspondante.',
+    basic_tag: 'Hors classement',
+    basic_title: 'Tournoi individuel (hors classement)',
+    basic_desc: 'Un tournoi individuel ordinaire, sans aucun calcul ni règlement de classement. Créez-le, laissez les joueurs s’inscrire, planifiez les matchs, saisissez les scores en un clic et terminez sur le classement final. Idéal pour les rencontres amicales et les événements ponctuels.',
+    rating_tag: 'Compte pour le classement',
+    rating_title: 'Tournoi individuel classé',
+    rating_desc: 'Les résultats comptent pour le classement inter-tournois. S’y ajoutent la saisie du classement initial, la demande de règlement, la validation par un administrateur et le classement général. Idéal pour les tournois officiels.',
+    go: 'Voir la procédure →',
+    back_home: '← Retour à l’accueil',
+  },
+};
+var LANGS = [
+  { code: 'zh', label: '中文' },
+  { code: 'en', label: 'English' },
+  { code: 'fr', label: 'Français' },
+];
+
+function resolveLang() {
+  var q = new URLSearchParams(window.location.search).get('lng');
+  var stored = null;
+  try { stored = window.localStorage.getItem('i18nextLng'); } catch (e) { /* private mode */ }
+  var candidates = [q, stored];
+  for (var i = 0; i < candidates.length; i += 1) {
+    var c = candidates[i];
+    if (!c) continue;
+    var base = String(c).split('-')[0];
+    if (STRINGS[base]) return base;
+  }
+  return 'zh';
+}
+
+// The per-flow walkthroughs are pre-rendered per language: basic.html is the
+// Chinese one, basic.en.html / basic.fr.html the translated ones.
+function guideHref(flow, lang) {
+  return lang === 'zh' ? '/guide/' + flow + '.html' : '/guide/' + flow + '.' + lang + '.html';
+}
+
+function apply(lang) {
+  var s = STRINGS[lang];
+  document.documentElement.lang = lang;
+  document.title = s.title + ' · ' + SITE[lang];
+  Object.keys(s).forEach(function (key) {
+    if (key === 'lead_html') return;
+    var nodes = document.querySelectorAll('[data-i18n="' + key + '"]');
+    for (var i = 0; i < nodes.length; i += 1) nodes[i].textContent = s[key];
+  });
+  document.querySelector('.lead').innerHTML = s.lead_html;
+  document.getElementById('card-basic').setAttribute('href', guideHref('basic', lang));
+  document.getElementById('card-rating').setAttribute('href', guideHref('rating', lang));
+  document.querySelector('footer a').setAttribute('href', lang === 'zh' ? '/' : '/?lng=' + lang);
+  var buttons = document.querySelectorAll('#langbar button');
+  for (var j = 0; j < buttons.length; j += 1) {
+    buttons[j].setAttribute('aria-current', String(buttons[j].dataset.lang === lang));
+  }
+}
+
+function switchTo(lang) {
+  // Persist under i18next's key so the app picks up the same choice.
+  try { window.localStorage.setItem('i18nextLng', lang); } catch (e) { /* private mode */ }
+  apply(lang);
+}
+
+(function init() {
+  var bar = document.getElementById('langbar');
+  LANGS.forEach(function (l) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = l.label;
+    b.dataset.lang = l.code;
+    b.addEventListener('click', function () { switchTo(l.code); });
+    bar.appendChild(b);
+  });
+  apply(resolveLang());
+})();
+</script>
+</body>
+</html>

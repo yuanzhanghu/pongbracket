@@ -13,6 +13,7 @@ from bracket.models.db.tournament import TournamentBody
 from bracket.sql.clubs import create_club
 from bracket.sql.rankings import sql_create_ranking
 from bracket.sql.tournaments import sql_create_tournament
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import UserId
 
 if TYPE_CHECKING:
@@ -68,8 +69,11 @@ def check_requirement(array: list[Any], user: UserBase, attribute: str, addition
     if len(array) + additions > constraint:
         raise HTTPException(
             400,
-            f"Your `{user.account_type.value}` subscription allows a maximum of "
-            f"{constraint} {attribute.replace('max_', '')}.",
+            tr("当前套餐（{account_type}）最多允许 {constraint} 个{attribute}").format(
+                account_type=user.account_type.value,
+                constraint=constraint,
+                attribute=attribute.replace("max_", ""),
+            ),
         )
 
 

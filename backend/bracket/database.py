@@ -8,8 +8,7 @@ from bracket.config import config
 
 
 def datetime_decoder(value: str) -> datetime_utc:
-    value = value.split(".")[0].replace("+00", "+00:00")
-    return datetime_utc.fromisoformat(value)
+    return datetime_utc.fromisoformat(value.replace("+00", "+00:00"))
 
 
 async def asyncpg_init(connection: Any) -> None:

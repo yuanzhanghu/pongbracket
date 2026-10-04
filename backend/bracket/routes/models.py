@@ -6,6 +6,7 @@ from bracket.models.db.court import Court
 from bracket.models.db.match import Match, SuggestedMatch
 from bracket.models.db.player import Player
 from bracket.models.db.ranking import Ranking
+from bracket.models.db.rating import AdminUserRatings
 from bracket.models.db.stage_item_inputs import (
     StageItemInputOptionFinal,
     StageItemInputOptionTentative,
@@ -85,6 +86,10 @@ class UserPublicResponse(DataResponse[UserPublic]):
 
 
 class TokenResponse(DataResponse[Token]):
+    pass
+
+
+class AdminUserListResponse(DataResponse[list[AdminUserRatings]]):
     pass
 
 

@@ -14,10 +14,13 @@ if TYPE_CHECKING:
 
 
 class UserBase(BaseModelORM):
-    email: str
+    # Optional: some users don't want to share an email with the site. The
+    # (unique) name is the primary login identifier.
+    email: str | None = None
     name: str
     created: datetime_utc
     account_type: UserAccountType
+    is_admin: bool = False
 
     @property
     def subscription(self) -> Subscription:
@@ -40,12 +43,12 @@ class UserPublic(UserBase):
 
 
 class UserToUpdate(BaseModel):
-    email: str
+    email: str | None = None
     name: str
 
 
 class UserPasswordToUpdate(BaseModel):
-    password: Annotated[str, StringConstraints(min_length=8, max_length=48)]
+    password: Annotated[str, StringConstraints(min_length=4, max_length=48)]
 
 
 class DemoUserToRegister(BaseModelORM):
@@ -53,7 +56,7 @@ class DemoUserToRegister(BaseModelORM):
 
 
 class UserToRegister(BaseModelORM):
-    email: str
+    email: str | None = None
     name: str
     password: str
     captcha_token: str

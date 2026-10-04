@@ -10,6 +10,7 @@ from bracket.sql.courts import get_all_courts_in_tournament
 from bracket.sql.players import get_all_players_in_tournament, get_player_by_id
 from bracket.sql.stages import get_full_tournament_details
 from bracket.sql.teams import get_team_by_id
+from bracket.utils.i18n import tr, tr_entity
 from bracket.utils.id_types import (
     CourtId,
     MatchId,
@@ -101,7 +102,9 @@ async def check_court_belongs_to_tournament(
 
 def raise_exception(field_type: Any, field_value: Any) -> NoReturn:
     field_name = field_type.__name__ if field_type is not None else "Unknown type"
-    msg = f"Could not find {field_name.replace('Id', '')}(s) with ID {field_value}"
+    msg = tr("找不到 ID 为 {value} 的{name}").format(
+        value=field_value, name=tr_entity(field_name.replace("Id", ""))
+    )
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
 

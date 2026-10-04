@@ -4,9 +4,11 @@ from unittest.mock import Mock, patch
 
 import jwt
 import pytest
+from heliclockter import timedelta
 
 from bracket.config import config
 from bracket.models.db.account import UserAccountType
+from bracket.routes.auth import ACCESS_TOKEN_EXPIRE_MINUTES
 from bracket.utils.dummy_records import DUMMY_CLUB, DUMMY_TOURNAMENT
 from bracket.utils.http import HTTPMethod
 from bracket.utils.types import JsonDict
@@ -30,14 +32,35 @@ async def test_get_token_success(startup_and_shutdown_uvicorn_server: None) -> N
         "password": "mypassword",
     }
     with mock_auth_time():
-        async with inserted_user(mock_user):
+        async with inserted_user(mock_user) as user_inserted:
             response = JsonDict(await send_request(HTTPMethod.POST, "token", body))
 
     assert "access_token" in response
     assert response.get("token_type") == "bearer"
 
     decoded = jwt.decode(response["access_token"], config.jwt_secret, algorithms=["HS256"])
-    assert decoded == {"user": mock_user.email, "exp": 7258723200}
+    # The subject is the user id, not the email — emails became optional. `tv` is the
+    # token generation, which a password change bumps.
+    expected_exp = int((MOCK_NOW + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)).timestamp())
+    assert decoded == {"user": str(user_inserted.id), "tv": 0, "exp": expected_exp}
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_token_email_case_insensitive(startup_and_shutdown_uvicorn_server: None) -> None:
+    # Simulate a legacy row stored with mixed-case email; login should still succeed
+    # regardless of how the user capitalises their address.
+    mock_user = get_mock_user()
+    mock_user = mock_user.model_copy(update={"email": mock_user.email.upper()})
+    body = {
+        "username": mock_user.email.lower(),
+        "password": "mypassword",
+    }
+    with mock_auth_time():
+        async with inserted_user(mock_user):
+            response = JsonDict(await send_request(HTTPMethod.POST, "token", body))
+
+    assert "access_token" in response
+    assert response.get("token_type") == "bearer"
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -51,7 +74,7 @@ async def test_get_token_invalid_credentials(startup_and_shutdown_uvicorn_server
         async with inserted_user(mock_user):
             response = JsonDict(await send_request(HTTPMethod.POST, "token", body))
 
-    assert response == {"detail": "Incorrect email or password"}
+    assert response == {"detail": "邮箱/名称或密码错误"}
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -71,6 +94,7 @@ async def test_auth_on_protected_endpoint(startup_and_shutdown_uvicorn_server: N
                 "name": user_inserted.name,
                 "created": "2000-01-01T00:00:00Z",
                 "account_type": UserAccountType.REGULAR.value,
+                "is_admin": False,
             }
         }
 
@@ -80,7 +104,7 @@ async def test_invalid_token(startup_and_shutdown_uvicorn_server: None) -> None:
     headers = {"Authorization": "Bearer some.invalid.token"}
 
     response = JsonDict(await send_request(HTTPMethod.GET, "users/me", {}, None, headers))
-    assert response == {"detail": "Could not validate credentials"}
+    assert response == {"detail": "登录状态无效，请重新登录"}
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -98,4 +122,4 @@ async def test_not_authenticated_for_tournament(
                     HTTPMethod.GET, f"tournaments/{tournament_inserted.id}/players", auth_context
                 )
             )
-    assert response == {"detail": "Could not validate credentials"}
+    assert response == {"detail": "登录状态无效，请重新登录"}

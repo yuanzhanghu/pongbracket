@@ -14,12 +14,10 @@ import {
 } from '@mantine/core';
 import { AiFillWarning } from '@react-icons/all-files/ai/AiFillWarning';
 import { IconAlertCircle, IconCalendarPlus, IconDots, IconTrash } from '@tabler/icons-react';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SWRResponse } from 'swr';
 
 import CourtModal from '@components/modals/create_court_modal';
-import MatchModal from '@components/modals/match_modal';
 import { NoContent } from '@components/no_content/empty_table_info';
 import { Time } from '@components/utils/datetime';
 import { formatMatchInput1, formatMatchInput2 } from '@components/utils/match';
@@ -42,13 +40,11 @@ import { rescheduleMatch, scheduleMatches } from '@services/match';
 function ScheduleRow({
   index,
   match,
-  openMatchModal,
   stageItemsLookup,
   matchesLookup,
 }: {
   index: number;
   match: MatchWithDetails;
-  openMatchModal: any;
   stageItemsLookup: any;
   matchesLookup: any;
 }) {
@@ -63,9 +59,6 @@ function ScheduleRow({
             radius="md"
             withBorder
             mt="md"
-            onClick={() => {
-              openMatchModal(match);
-            }}
             {...provided.dragHandleProps}
           >
             <Grid>
@@ -108,7 +101,6 @@ function ScheduleColumn({
   tournamentId,
   court,
   matches,
-  openMatchModal,
   stageItemsLookup,
   swrCourtsResponse,
   matchesLookup,
@@ -116,7 +108,6 @@ function ScheduleColumn({
   tournamentId: number;
   court: Court;
   matches: MatchWithDetails[];
-  openMatchModal: any;
   stageItemsLookup: any;
   swrCourtsResponse: SWRResponse<CourtsResponse>;
   matchesLookup: any;
@@ -128,7 +119,6 @@ function ScheduleColumn({
       stageItemsLookup={stageItemsLookup}
       matchesLookup={matchesLookup}
       match={match}
-      openMatchModal={openMatchModal}
       key={match.id}
     />
   ));
@@ -193,7 +183,6 @@ function Schedule({
   stageItemsLookup,
   matchesLookup,
   schedule,
-  openMatchModal,
 }: {
   t: Translator;
   tournament: TournamentMinimal;
@@ -201,7 +190,6 @@ function Schedule({
   stageItemsLookup: any;
   matchesLookup: any;
   schedule: { court: Court; matches: MatchWithDetails[] }[];
-  openMatchModal: CallableFunction;
 }) {
   const columns = schedule.map((item) => (
     <ScheduleColumn
@@ -212,7 +200,6 @@ function Schedule({
       key={item.court.id}
       court={item.court}
       matches={item.matches}
-      openMatchModal={openMatchModal}
     />
   ));
 
@@ -246,9 +233,6 @@ function Schedule({
 }
 
 export default function SchedulePage() {
-  const [modalOpened, modalSetOpened] = useState(false);
-  const [match, setMatch] = useState<MatchWithDetails | null>(null);
-
   const { t } = useTranslation();
   const { tournamentData } = getTournamentIdFromRouter();
   const swrStagesResponse = getStages(tournamentData.id);
@@ -270,24 +254,8 @@ export default function SchedulePage() {
   if (!responseIsValid(swrStagesResponse)) return null;
   if (!responseIsValid(swrCourtsResponse)) return null;
 
-  function openMatchModal(matchToOpen: MatchWithDetails) {
-    setMatch(matchToOpen);
-    modalSetOpened(true);
-  }
-
   return (
     <TournamentLayout tournament_id={tournamentData.id}>
-      {match != null ? (
-        <MatchModal
-          swrStagesResponse={swrStagesResponse}
-          swrUpcomingMatchesResponse={null}
-          tournamentData={tournamentData}
-          match={match}
-          opened={modalOpened}
-          setOpened={modalSetOpened}
-          round={null}
-        />
-      ) : null}
       <Grid grow>
         <Grid.Col span={6}>
           <Title>{t('planning_title')}</Title>
@@ -332,7 +300,6 @@ export default function SchedulePage() {
             schedule={data}
             stageItemsLookup={stageItemsLookup}
             matchesLookup={matchesLookup}
-            openMatchModal={openMatchModal}
           />
         </DragDropContext>
       </Group>

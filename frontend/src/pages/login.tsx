@@ -2,6 +2,7 @@ import {
   Anchor,
   Button,
   Container,
+  Group,
   Paper,
   PasswordInput,
   Text,
@@ -15,12 +16,14 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
+import { guideIndexHref } from '@components/utils/guide';
+import LanguageSwitcher from '@components/utils/language_switcher';
 import { tokenPresent } from '@services/local_storage';
 import { performLogin } from '@services/user';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   useEffect(() => {
     if (tokenPresent()) {
       navigate('/');
@@ -48,17 +51,23 @@ export default function LoginPage() {
     },
 
     validate: {
-      email: (value) => (/^\S+@\S+$/.test(value) ? null : t('invalid_email_validation')),
-      password: (value) => (value.length >= 8 ? null : t('invalid_password_validation')),
+      // The login identifier may be an email address OR a user name (Chinese
+      // names included) — only require it to be non-empty.
+      email: (value) => (value.trim() !== '' ? null : t('login_identifier_required')),
+      // Only require a non-empty password on the login form; the server is the
+      // source of truth for credentials (length rules apply at registration).
+      password: (value) => (value.length >= 1 ? null : t('invalid_password_validation')),
     },
   });
 
   return (
     <>
-      <Title ta="center" mt={100}>
-        {t('welcome_title')}{' '}
+      <Group justify="flex-end" p="md">
+        <LanguageSwitcher />
+      </Group>
+      <Title ta="center" mt={60}>
         <Text inherit variant="gradient" component="span">
-          Bracket
+          {t('welcome_title')}
         </Text>
       </Title>
       <Container size={480} my={40}>
@@ -88,11 +97,12 @@ export default function LoginPage() {
             onSubmit={form.onSubmit(async (values) => attemptLogin(values.email, values.password))}
           >
             <TextInput
-              label={t('email_input_label')}
-              placeholder={t('email_input_placeholder')}
+              label={t('login_identifier_label')}
+              placeholder={t('login_identifier_placeholder')}
               required
               my="lg"
-              type="email"
+              type="text"
+              name="email"
               {...form.getInputProps('email')}
             />
             <PasswordInput
@@ -110,9 +120,12 @@ export default function LoginPage() {
             <Anchor<'a'> onClick={() => navigate('/create-account')} size="sm">
               {t('create_account_button')}
             </Anchor>
+            {/* 忘记密码 link hidden: the /password-reset page was never
+                implemented (404), and email is optional now anyway. Restore it
+                if a real reset flow lands. */}
             {' - '}
-            <Anchor<'a'> onClick={() => navigate('/password-reset')} size="sm">
-              {t('forgot_password_button')}
+            <Anchor href={guideIndexHref(i18n)} target="_blank" size="sm">
+              {t('user_guide_title')}
             </Anchor>
           </Text>
         </Paper>

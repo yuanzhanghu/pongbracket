@@ -1,3 +1,12 @@
+# NOTE: The DEPLOYED bracket.ai1to1.com now runs from
+# a separate deployment compose file (image `bracket:deployed`, with
+# the production data volumes bracket_bracket_pg_data / bracket_bracket_static_data).
+# THIS compose is for LOCAL DEV ONLY — separate project name (bracket-dev), its own
+# throwaway volumes, and host port 8401 — so running it cannot affect the deployed
+# site or its database. Update prod by rebuilding here, `docker tag <img> bracket:deployed`,
+# then `docker compose up -d bracket` in the deployment stack.
+name: bracket-dev
+
 networks:
   bracket_lan:
     driver: bridge
@@ -8,20 +17,24 @@ volumes:
 
 services:
   bracket:
-    container_name: bracket
+    container_name: bracket-dev
     depends_on:
       - postgres
     environment:
       ENVIRONMENT: DEVELOPMENT
-      CORS_ORIGINS: http://localhost:8400
+      CORS_ORIGINS: http://localhost:8401
       PG_DSN: postgresql://bracket_dev:bracket_dev@postgres:5432/bracket_dev
       SERVE_FRONTEND: true
       API_PREFIX: '/api'
-    image: ghcr.io/evroon/bracket
+    # Build from source so the custom changes are baked in:
+    #   - completed Chinese (zh) translation
+    #   - native "按排位自动分组" (auto-group by seeding) button
+    # Run with: docker compose up -d --build
+    build: .
     networks:
       - bracket_lan
     ports:
-      - 8400:8400
+      - 8401:8400
     restart: unless-stopped
     volumes:
       - bracket_static_data:/app/static

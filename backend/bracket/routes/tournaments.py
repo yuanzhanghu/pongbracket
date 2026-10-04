@@ -26,13 +26,15 @@ from bracket.routes.auth import (
     user_authenticated_or_public_dashboard_by_endpoint_name,
 )
 from bracket.routes.models import SuccessResponse, TournamentResponse, TournamentsResponse
-from bracket.routes.util import disallow_archived_tournament
+from bracket.routes.util import disallow_archived_tournament, disallow_settled_tournament
 from bracket.schema import tournaments
+from bracket.sql.players import sql_delete_players_of_tournament
 from bracket.sql.rankings import (
     get_all_rankings_in_tournament,
     sql_create_ranking,
     sql_delete_ranking,
 )
+from bracket.sql.ratings import get_rating_category
 from bracket.sql.tournaments import (
     sql_create_tournament,
     sql_delete_tournament,
@@ -49,16 +51,20 @@ from bracket.utils.errors import (
     check_foreign_key_violation,
     check_unique_constraint_violation,
 )
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import TournamentId
 from bracket.utils.logging import logger
 
 router = APIRouter(prefix=config.api_prefix)
 
-unauthorized_exception = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="You don't have access to this tournament",
-    headers={"WWW-Authenticate": "Bearer"},
-)
+
+def unauthorized_exception() -> HTTPException:
+    # Built per call so the message follows the language of the current request.
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=tr("你没有权限访问该比赛"),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.get("/tournaments/{tournament_id}", response_model=TournamentResponse)
@@ -78,14 +84,14 @@ async def get_tournaments(
 ) -> TournamentsResponse:
     match user, endpoint_name:
         case None, None:
-            raise unauthorized_exception
+            raise unauthorized_exception()
 
         case _, str() as endpoint_name:
             tournament = await sql_get_tournament_by_endpoint_name(endpoint_name)
             if tournament is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Can't find this tournament",
+                    detail=tr("找不到该比赛"),
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             return TournamentsResponse(data=[tournament])
@@ -106,6 +112,14 @@ async def update_tournament_by_id(
     _: UserPublic = Depends(user_authenticated_for_tournament),
     __: Tournament = Depends(disallow_archived_tournament),
 ) -> SuccessResponse:
+    tournament = await sql_get_tournament(tournament_id)
+    club_tournaments = await sql_get_tournaments((tournament.club_id,))
+    if any(t.name == tournament_body.name and t.id != tournament_id for t in club_tournaments):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=tr("比赛名“{name}”已存在").format(name=tournament_body.name),
+        )
+
     with check_unique_constraint_violation({UniqueIndex.ix_tournaments_dashboard_endpoint}):
         await sql_update_tournament(tournament_id, tournament_body)
 
@@ -115,20 +129,32 @@ async def update_tournament_by_id(
 
 @router.delete("/tournaments/{tournament_id}", response_model=SuccessResponse)
 async def delete_tournament(
-    tournament_id: TournamentId, _: UserPublic = Depends(user_authenticated_for_tournament)
+    tournament_id: TournamentId,
+    _: UserPublic = Depends(user_authenticated_for_tournament),
+    __: Tournament = Depends(disallow_settled_tournament),
 ) -> SuccessResponse:
-    for ranking in await get_all_rankings_in_tournament(tournament_id):
-        await sql_delete_ranking(tournament_id, ranking.id)
+    # Everything happens in one transaction: whatever is cleared on the way to the
+    # delete must come back if a foreign key still blocks it.
+    async with database.transaction():
+        # A ranking can still be referenced by a stage item (e.g. round-robin groups), so guard
+        # this too — otherwise the FK violation surfaces as a 500 instead of a clean "delete
+        # stages first" message.
+        with check_foreign_key_violation({ForeignKey.stage_items_ranking_id_fkey}):
+            for ranking in await get_all_rankings_in_tournament(tournament_id):
+                await sql_delete_ranking(tournament_id, ranking.id)
 
-    with check_foreign_key_violation(
-        {
-            ForeignKey.stages_tournament_id_fkey,
-            ForeignKey.teams_tournament_id_fkey,
-            ForeignKey.players_tournament_id_fkey,
-            ForeignKey.courts_tournament_id_fkey,
-        }
-    ):
-        await sql_delete_tournament(tournament_id)
+        # Players have no page of their own, so "delete the members first" would be an
+        # instruction nobody can follow — drop them here instead.
+        await sql_delete_players_of_tournament(tournament_id)
+
+        with check_foreign_key_violation(
+            {
+                ForeignKey.stages_tournament_id_fkey,
+                ForeignKey.teams_tournament_id_fkey,
+                ForeignKey.courts_tournament_id_fkey,
+            }
+        ):
+            await sql_delete_tournament(tournament_id)
 
     return SuccessResponse()
 
@@ -147,7 +173,7 @@ async def change_status(
     if tournament.status == body.status:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tournament already has the requested status",
+            detail=tr("比赛已处于该状态"),
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -162,13 +188,31 @@ async def create_tournament(
     existing_tournaments = await sql_get_tournaments((tournament_to_insert.club_id,))
     check_requirement(existing_tournaments, user, "max_tournaments")
 
+    if any(t.name == tournament_to_insert.name for t in existing_tournaments):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=tr("比赛名“{name}”已存在").format(name=tournament_to_insert.name),
+        )
+
     has_access_to_club = await get_user_access_to_club(tournament_to_insert.club_id, user.id)
     if not has_access_to_club:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Club ID is invalid",
+            detail=tr("俱乐部 ID 无效"),
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Rating settings are fixed at creation. Only individual tournaments can be rated.
+    if tournament_to_insert.rating_category_id is not None:
+        if not tournament_to_insert.is_individual:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=tr("只有个人赛可以参与积分"),
+            )
+        if await get_rating_category(tournament_to_insert.rating_category_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=tr("找不到该积分类别")
+            )
 
     async with database.transaction():
         with check_unique_constraint_violation({UniqueIndex.ix_tournaments_dashboard_endpoint}):

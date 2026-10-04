@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>积分系统设计 · CanadaChinaTT</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --accent: #06b6d4;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --bg-soft: #f8fafc;
+    --ok: #16a34a;
+    --warn: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    line-height: 1.75;
+    background: #fff;
+  }
+  .container { max-width: 60rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+  header.hero {
+    background: linear-gradient(120deg, #1d4ed8, #06b6d4);
+    color: #fff;
+    padding: 2.5rem 1.25rem;
+    text-align: center;
+  }
+  header.hero h1 { margin: 0 0 0.5rem; font-size: 1.8rem; }
+  header.hero p { margin: 0; opacity: 0.92; }
+  .meta { font-size: 0.82rem; opacity: 0.85; margin-top: 0.6rem; }
+  nav.toc {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0 2rem;
+  }
+  nav.toc strong { display: block; margin-bottom: 0.25rem; }
+  nav.toc ol { margin: 0; padding-left: 1.4rem; columns: 2; }
+  nav.toc a { color: var(--primary); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  h2 {
+    margin-top: 2.6rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--border);
+    font-size: 1.35rem;
+  }
+  h2 .step {
+    display: inline-block;
+    background: var(--primary);
+    color: #fff;
+    border-radius: 50%;
+    width: 1.7rem; height: 1.7rem;
+    line-height: 1.7rem;
+    text-align: center;
+    font-size: 0.95rem;
+    margin-right: 0.5rem;
+  }
+  h3 { margin-top: 1.6rem; font-size: 1.08rem; }
+  code { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3rem; font-size: 0.92em; }
+  pre {
+    background: #0f172a; color: #e2e8f0; border-radius: 0.6rem;
+    padding: 0.9rem 1.1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.6;
+  }
+  pre code { background: none; border: none; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 0.9rem 0; font-size: 0.92rem; }
+  th, td { border: 1px solid var(--border); padding: 0.45rem 0.7rem; text-align: left; vertical-align: top; }
+  th { background: var(--bg-soft); }
+  .tip, .warn, .ok {
+    border-left: 4px solid var(--primary);
+    border-radius: 0 0.5rem 0.5rem 0;
+    padding: 0.6rem 1rem; margin: 0.9rem 0;
+    background: #eff6ff;
+  }
+  .warn { border-left-color: var(--warn); background: #fffbeb; }
+  .ok { border-left-color: var(--ok); background: #ecfdf5; }
+  .pill { display:inline-block; font-size:0.75rem; padding:0.05rem 0.5rem; border-radius:1rem; color:#fff; }
+  .pill.p1 { background: var(--ok); }
+  .pill.p2 { background: var(--primary); }
+  .pill.p3 { background: var(--muted); }
+  .pill.new { background:#7c3aed; }
+  footer { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 3rem; }
+  .small { font-size: 0.85rem; color: var(--muted); }
+  ol.flow { padding-left: 1.3rem; }
+  ol.flow > li { margin: 0.5rem 0; }
+</style>
+</head>
+<body>
+<header class="hero">
+  <h1>积分系统 · 高层设计</h1>
+  <p>跨赛事等级分 · 开球网 ChinaTT 规则 · 默认类别 加华积分（CanadaChinaTT）</p>
+  <div class="meta">bracket 锦标赛系统 · FastAPI + 原生 SQL + Alembic / Next·Vite·Mantine</div>
+</header>
+<div class="container">
+
+<nav class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#idea">核心思路</a></li>
+    <li><a href="#decisions">关键约束与已定决策</a></li>
+    <li><a href="#model">数据模型</a></li>
+    <li><a href="#lifecycle">积分生命周期（关键）</a></li>
+    <li><a href="#engine">开球网积分引擎</a></li>
+    <li><a href="#perm">权限模型</a></li>
+    <li><a href="#flow">关键流程（对应需求）</a></li>
+    <li><a href="#api">API 接口</a></li>
+    <li><a href="#frontend">前端改动</a></li>
+    <li><a href="#phasing">分期落地</a></li>
+    <li><a href="#open">已定事项</a></li>
+  </ol>
+</nav>
+
+<h2 id="idea"><span class="step">1</span>核心思路</h2>
+<p>今天的数据模型里，<strong>Team / Player 是「赛事内」实体</strong>，与登录账号 <code>User</code> 没有任何关联；权限只有「俱乐部级」。本需求的本质是引入一个<strong>跨赛事、由网站管理员维护的积分体系</strong>，并让账号能以「个人赛一人一队」的方式自助参赛：</p>
+<div class="ok">
+新增核心实体 <strong>积分类别 (Rating Category)</strong>（全局，非俱乐部所有；默认「加华积分 <code>CanadaChinaTT</code>」）。每个<strong>账号</strong>在每个类别里有一个<strong>等级分</strong>。<strong>个人赛</strong>可挂靠到某类别；用户申请加入即<strong>自动创建与用户同名的队伍</strong>并绑定账号。比赛结果按<strong>开球网 ChinaTT 规则</strong>逐场计算，但只有<strong>网站管理员赛后审核初始分通过后</strong>才真正结算升降。
+</div>
+<p>体系围绕五个新概念，其余都是把它们接到现有结构上：</p>
+<table>
+  <tr><th>新概念</th><th>作用</th><th>归属 / 关联</th></tr>
+  <tr><td><strong>Rating Category 积分类别</strong></td><td>跨赛事的积分池（加华积分…）</td><td><strong>全局</strong>，仅网站管理员维护</td></tr>
+  <tr><td><strong>Player Rating 账号等级分</strong></td><td>(账号 × 类别) → 当前分 / 初始分 / 审核状态</td><td>关联 <code>User</code></td></tr>
+  <tr><td><strong>Team↔Account 绑定</strong></td><td>让比赛结果落到账号头上</td><td>个人赛申请时<strong>自动建同名队伍</strong>，1:1</td></tr>
+  <tr><td><strong>Join Request 参赛申请</strong></td><td>用户申请加入个人赛</td><td>关联 <code>Tournament ↔ User</code></td></tr>
+  <tr><td><strong>Trusted Manager 托管管理员</strong></td><td>用户授权的管理员，可免审核直接拉人进赛</td><td>关联 <code>User ↔ User</code>（被管理者 ↔ 管理员）</td></tr>
+</table>
+
+<h2 id="decisions"><span class="step">2</span>关键约束与已定决策</h2>
+<table>
+  <tr><th>决策</th><th>结论</th></tr>
+  <tr><td>积分主体</td><td><strong>账号（个人）</strong>。比赛永远是「账号 vs 账号」。</td></tr>
+  <tr><td>计分范围</td><td><strong>仅个人赛（一队 = 一人）可计分</strong>，也仅个人赛允许个人账号申请加入。团体赛照常办赛，无积分 / 无申请入口。</td></tr>
+  <tr><td>队伍创建</td><td>用户申请加入个人赛 → <strong>自动创建与用户同名的队伍</strong>并 1:1 绑定该账号。</td></tr>
+  <tr><td>托管管理员</td><td>用户加入比赛时可勾选「把创建者设为托管管理员」。每个用户维护一份<strong>托管管理员列表</strong>（可增删）；列表中的管理员<strong>下次可免该用户同意直接拉其进赛</strong>。<br><span class="small"><strong>锋利边缘</strong>：在<strong>某一个</strong>赛事入会时勾一次，等于授予该创建者一项<strong>永久、对其今后所有个人赛生效</strong>的权限升级，藏在勾选框后很易被忽视。入会处文案<strong>必须写明</strong>「永久、对该创建者的所有未来个人赛生效」；「我的托管管理员」页可随时撤销（已含）。可选增强：给授权加<strong>作用域 / 到期</strong>限定。</span></td></tr>
+  <tr><td>计分粒度</td><td><strong>整赛事一个批次（batch-per-event）</strong>：赛事内每场都用选手「入场前冻结分」查表算 delta 再求和，<strong>赛内顺序不影响结果</strong>；赛事之间按<strong>结算顺序</strong>（<code>settled_seq</code>）依次叠加。</td></tr>
+  <tr><td>预排名初始分</td><td>创建者在<strong>队伍预排名</strong>时，可给无积分的账号 / 队伍指定一个<strong>临时初始分</strong>；队伍排名按初始分自动排序，用于<strong>蛇形分组</strong>。</td></tr>
+  <tr><td>升降结算门槛</td><td>创建者赛后点<strong>「申请积分结算」</strong>（校验全员已绑账号）→ 网站管理员审核新人临时初始分通过后，系统才<strong>批量结算</strong>升降。审核前积分「冻结」，仅用于分组排序。</td></tr>
+  <tr><td>结算资格</td><td><strong>强制全员绑定账号</strong>：rated 个人赛必须所有队伍都绑定账号才允许「申请结算」；未绑定者拦在结算入口（提示创建者补绑）。</td></tr>
+  <tr><td>「录入积分」权限</td><td>= <strong>赛事级记分员</strong>：被授权账号可在该个人赛录 / 改比分；不开放手改等级分。</td></tr>
+  <tr><td>积分类别归属</td><td><strong>网站管理员</strong>创建与维护，<strong>不属于任何俱乐部</strong>。需新增全局管理员角色。</td></tr>
+  <tr><td>「一队一人」如何保证</td><td>个人赛建队 / 加人入口<strong>强制 team 的 player 数 = 1</strong>（自动建队即满足）；rating 始终<strong>以 team 为单位</strong>结算，与队内人数解耦。现有 <code>/teams</code>、<code>/players</code> 接口在个人赛下须加该校验，防止绕过。</td></tr>
+  <tr><td>结算时机（无「已结束」态）</td><td>现 <code>TournamentStatus</code> 仅 <code>OPEN / ARCHIVED</code>。<strong>「申请结算」判据 = 该赛事「已成形对局」全部录得胜负</strong>：非 draft 轮里凡两侧已物化为 Final team 且双方已绑账号的场（<code>MatchWithDetailsDefinitive</code>）<strong>不得存在 <code>score1==score2</code>（含 0–0）</strong>（判据细节与「为何不能直接用『计分场次』判完整」见 §3）。不另加状态机；owner 任意时点可点，后端按此校验。</td></tr>
+</table>
+
+<h2 id="model"><span class="step">3</span>数据模型</h2>
+<p>沿用现有「原生 SQL + Pydantic + Alembic」模式（<code>backend/bracket/schema.py</code>、<code>backend/bracket/sql/*</code>、<code>backend/alembic/versions/*</code>）。新增 6 张表，给 <code>tournaments</code> 加 2 列、<code>users</code> 加 1 列。</p>
+
+<h3><span class="pill new">新增</span> 全局管理员标识 —— <code>users</code> 加列</h3>
+<pre><code>users.is_admin   BOOLEAN  NOT NULL  DEFAULT false   -- 网站管理员：维护积分类别、审核初始分</code></pre>
+<p class="small">替代方案：扩展 <code>account_type</code> 枚举出 ADMIN。但 <code>is_admin</code> 布尔列与 DEMO 账号正交、改动最小，推荐布尔列。</p>
+
+<h3><span class="pill new">新增</span> <code>rating_categories</code> —— 积分类别（全局）</h3>
+<pre><code>id, key UNIQUE ('CanadaChinaTT'), name ('加华积分'),
+algorithm DEFAULT 'chinatt', created          -- 无 club_id，全局共享</code></pre>
+<p>迁移时 seed 默认：<code>key='CanadaChinaTT', name='加华积分', algorithm='chinatt'</code>。</p>
+
+<h3><span class="pill new">新增</span> <code>player_ratings</code> —— 账号在某类别的等级分（ledger head）</h3>
+<pre><code>id, category_id FK, user_id FK,
+initial_rating  Integer,         -- 创建者预排名时给的临时初始分
+current_rating  Integer,         -- 审核+结算后的正式分（审核前=初始分，仅供排序）
+status          Enum('PENDING','ACTIVE'),   -- PENDING=初始分待管理员审核
+approved_by     FK users NULL,   approved_at DateTimeTZ NULL,
+matches_played  Integer DEFAULT 0,  last_updated DateTimeTZ
+UNIQUE(category_id, user_id)</code></pre>
+<div class="warn"><strong>等级分用整数，不用 <code>Numeric</code>。</strong>ChinaTT 表的查表键是<strong>两选手分差（整数）</strong>，产出也全是整数档（8/7/10…），且 §11 闭区间取档（<code>diff ≤ 12 / 13 ≤ diff ≤ 37</code>）对小数无定义。故 <code>initial_rating / current_rating</code> 一律<strong>整数</strong>：创建者填初始分、管理员审核调整、引擎 delta 均为整数，杜绝 <code>diff = 12.5</code> 落档歧义。<strong>不复用</strong> per-tournament ELO 的 <code>Decimal</code> + <code>int(K·…)</code> 截断路径（<code>calculation.py:58</code>），与 <code>elo_score</code> 体系彻底解耦。</div>
+
+<h3><span class="pill new">新增</span> <code>rating_events</code> —— 每场计分比赛的加减分流水（append-only）</h3>
+<pre><code>id, category_id FK, match_id FK, user_id FK, opponent_id FK,
+rating_before, rating_after, delta, result Enum('W','L'),
+tournament_id FK,     -- 该流水属于哪个赛事批次（排序按其 settled_seq）
+created DateTimeTZ     -- 结算写入时间（审计用，非排序键）</code></pre>
+<p>可审计、可重算：<strong>正式分 = 初始分 + Σ(delta)</strong>，按赛事 <code>settled_seq</code> 顺序叠加（赛内各场无序求和）；改已结算赛事的比分时，从该 <code>settled_seq</code> 往后重建本表（重放范围见 §5）。</p>
+<div class="warn"><strong><code>user_id / opponent_id</code> 是结算时<strong>解析</strong>出来的派生值，不是比赛自带字段。</strong> 见下「比赛 → 账号 解析层」：<code>rating_events</code> 仅 <code>match_id</code> 是原生外键，两个账号由结算引擎按解析路径推出后落库（落库后冻结，作为审计快照）。</div>
+
+<h3><span class="pill new">关键</span> 比赛 → 账号 解析层（<code>matches</code> 不直接连 team / 账号）</h3>
+<p>现模型里 <strong><code>matches</code> 不引用 <code>teams</code></strong>，而是引用 <code>stage_item_inputs</code>。一个 input 有三态：</p>
+<table>
+  <tr><th>input 态</th><th>含义</th><th>能否解析出账号</th></tr>
+  <tr><td><strong>Final</strong></td><td>有 <code>team_id</code>，真正的队伍</td><td>能（team → <code>teams_x_users</code> → user）</td></tr>
+  <tr><td><strong>Tentative</strong></td><td><code>winner_from_stage_item_id</code> + <code>winner_position</code> 占位（指向上游 stage item 的名次），<strong>尚无 team_id</strong></td><td>不能 → 跳过</td></tr>
+  <tr><td><strong>Empty</strong></td><td>轮空（bye）</td><td>不能 → 跳过</td></tr>
+</table>
+<p>解析路径：<code>match → input1/input2（须均 Final）→ team_id → teams_x_users → user_id</code>。代码已有
+<code>MatchWithDetailsDefinitive</code>（两侧 input 均为<strong>非空对象</strong>）这一类型，结算引擎<strong>直接复用</strong>它判定「已成形的对局」。<strong>注意 <code>Definitive</code> 类型本身只要求两侧 input 行非空、并不保证两侧都是 Final team</strong>：一个 <code>Empty</code>（轮空）input 也是<strong>已填充但 <code>team_id=None</code></strong> 的行（<code>stage_item_inputs.py:63</code>），故 Final+Empty 的轮空场<strong>同样会算成 <code>Definitive</code></strong>。轮空被过滤掉<strong>不是靠类型、而是靠「双方已绑账号」那一条</strong>（Empty 无 team 可绑）。落地时<strong>务必保留绑定校验</strong>，不可因「已是 Definitive」就省掉它。</p>
+<p class="small">注：淘汰赛<strong>后续轮</strong>的占位是<strong>另一机制</strong>——match 级 <code>winner_from_match_id</code>（<code>stage_item_input1/2_winner_from_match_id</code>），此时 match 的 input_id 为空、非 <code>Definitive</code>，同样天然挡住提前结算。上面「input 三态」表描述的是 <code>stage_item_inputs</code> 行自身的状态（其 Tentative 态由 <code>winner_from_stage_item_id</code> 触发，用于跨 stage 种子）。</p>
+<div class="tip"><strong>「计分场次」判据（结算引擎据此筛选，解决无 status 列问题）。</strong>
+<code>matches</code> 表<strong>没有「已打完」状态</strong>，新建即 <code>0–0</code>，且淘汰赛会预先把整张签表的占位场全建出来。
+故一场比赛纳入结算<strong>当且仅当</strong>同时满足：
+<ol style="margin:.3rem 0">
+  <li>所在轮 <code>round.is_draft = false</code>；</li>
+  <li>是 <code>MatchWithDetailsDefinitive</code>（两侧 input 都已物化为 Final team）；</li>
+  <li>两队都已绑账号（<code>teams_x_users</code> 命中）；</li>
+  <li>比分可判胜负 <code>score1 ≠ score2</code>（乒乓无平局，<code>0–0</code> ＝ 未打 ＝ 跳过）。</li>
+</ol>
+轮空、单侧空位、占位未物化、未录分的 <code>0–0</code> 一律不计。引擎只产出 W/L，无平局 / 弃权分支。
+<p style="margin:.5rem 0 0"><strong>「计分场次」≠「完整性判据」（修正循环定义，否则可半场结算）。</strong>上面四条是<strong>结算时把哪些场计入</strong>的过滤器，<strong>不能</strong>反过来判断「赛事是否打完」——未打的 <code>0–0</code> 按定义就被排除，用它判完整是<strong>自我空转</strong>，永远发现不了还有没打的场。淘汰赛靠 Tentative 占位天然挡住提前结算；但 <strong>round-robin / Swiss 开赛即把整组建为 Definitive + Final + <code>0–0</code></strong>，过滤器会把未打的场当「非计分场次」跳过，于是<strong>打一半即可申请结算、剩余场被静默丢弃</strong>，等它们补打完只能落到更大的 <code>settled_seq</code> → 被迫<strong>改已结算赛事 → 触发链中段重放</strong>（§4/§5 最贵路径）。<br>
+故<strong>结算完整性闸门另立判据</strong>（与「计分场次」过滤器分开）：<em>非 draft 轮里，凡两侧已物化为 Final team 且双方已绑账号的「已成形对局」，<strong>一律不得存在 <code>score1==score2</code></strong></em>。即区分两种 <code>0–0</code>：<strong>占位未物化</strong>（Tentative/Empty，正常跳过）vs <strong>已成形但未录分</strong>（Definitive + 已绑 + <code>0–0</code>，<strong>阻断结算</strong>并提示「还有未录分的比赛」）。<br><strong>另须查「尚未生成」的场</strong>：上面只能看到<strong>已存在</strong>的 Definitive 场，但 <strong>Swiss 后续轮是 draft 轮、按需才建</strong>（<code>create_match</code> 仅允许在 Swiss 的 draft 轮建场，<code>routes/matches.py</code>），<strong>多阶段赛的后续 stage 未激活前也无 match 行</strong>。只查 <code>0–0</code> 会漏判：第一轮打完、后续轮尚未 draft 时闸门误判「已完整」。故须叠加<strong>结构性完整判据</strong>——该 stage item 无残留 draft 轮、Swiss 处于终态、且整个赛事的 stage 推进已到末。<br><strong>「无未激活的后续 stage」须按真实 schema 表达——没有「本 stage 已完成」标志，只有单一 <code>is_active</code> 指针。</strong><code>sql_activate_next_stage</code> 做的是 <code>SET is_active = (stages.id = :new_active_stage_id)</code>（<code>sql/stages.py:205</code>）：<strong>全表同时只有一个 stage 是 active</strong>，已打完的早期 stage 同样是 <code>is_active=false</code>，与「尚未激活的后续 stage」<strong>无法用 <code>is_active</code> 区分</strong>。故完整性判据须改成可判定的形式：<em>当前 active 的 stage 必须是<strong>最后一个 stage</strong>（<code>max(stages.id)</code> / 末位 order），且其下所有 Definitive+已绑场均已判胜负</em>；或为赛事引入一个真正的「计分完成」标志位，不可依赖「后续 stage 未激活」这种不可表达的判据。<br><strong>另：已结算赛事禁止向前回拨 stage。</strong>反向激活（<code>direction="previous"</code>）走 <code>update_matches_in_deactivated_stage</code>（<code>handle_stage_activation.py:200-211</code>），它对被离开 stage 的每个 stage-item 做<strong>两件相互独立的写</strong>：(a) <code>clear_scores_for_matches_in_stage_item</code> 把比分清零（<code>sql/matches.py:261</code>，只 <code>SET score1=score2=0, games=NULL</code>，<strong>不动 team_id</strong>）；(b) <strong>单独</strong>对其中 <code>winner_from_stage_item_id IS NOT NULL</code> 的 tentative input 把 <code>team_id</code> 置空（仅<strong>跨 stage-item 种子</strong>的占位，<strong>非全部</strong> team_id）。若赛事已结算后再回拨 stage，比分被清零会让账本（<code>rating_events</code>）与实时比分<strong>脱节</strong>。故 <code>settled_seq IS NOT NULL</code> 的赛事必须<strong>禁止任何 stage 反向激活</strong>——守卫挂在 <code>direction="previous"</code> 的<strong>激活入口</strong>（非两个底层 helper 之一，二者是分开的两次写），要改须先走管理员级「撤销结算」。<strong>同理，已结算冻结须一并覆盖 stage-item（及 stage）的删除</strong>，不能只挡 <code>direction="previous"</code> 一条路径。真正抽空账本 match 祖先的是 <strong>stage-item 删除</strong>（<code>DELETE /stage_items/{id}</code> → <code>sql_delete_stage_item_with_foreign_keys</code> 按序删 matches→inputs→rounds→stage_item，<code>sql/shared.py</code>）；删 stage 路由本身会<strong>拒绝删非空 stage</strong>（须先删其 stage-item），故冻结的着力点主要在 stage-item 删除，stage 删除一并挡住即可。</p>
+<p style="margin:.5rem 0 0"><strong>录分即校验可判胜负（防平局静默丢失）。</strong>rated 个人赛的已成形对局<strong>录分时</strong>，最终比分<strong>必须可判胜负</strong>（<code>score1≠score2</code>）；误录成平局（如 3–3）应<strong>当场拒绝</strong>，不能让它沿用「<code>0–0</code> ＝ 未打」的语义被静默从积分里漏掉。<code>get_winner()</code> 平局返 <code>None</code> 只承载「未打」语义，<strong>不可</strong>当作「已打平」的有效结果。<br><strong>校验落点</strong>：录分的<strong>唯一写入口是类型无关的共享路由</strong>（<code>PUT /matches/{id}</code> → <code>sql_update_match</code>，团体赛 / 个人赛共用），故该校验须落在共享写路径内、并<strong>以 <code>is_individual AND rating_category_id IS NOT NULL</code> 为门控</strong>，否则要么误伤团体赛（团体赛允许平局），要么被从共享路由绕过。<br><strong>门控字段是可变的——翻 flag 时须回补校验。</strong><code>is_individual / rating_category_id</code> 可经 <code>PUT /tournaments/{id}</code> 事后改写：赛事<strong>先以非积分态录分</strong>（match 新建即 <code>0–0</code>，可遗留已成形但未录分的 <code>0–0</code>，甚至误录平局），<strong>再翻成积分态</strong>，则这些行录入时门控为假、从未被校验过。下游虽有「结算完整性闸门」兜底（任何 Definitive+已绑的 <code>score1==score2</code> 都会<strong>阻断结算</strong>而非静默丢分），但报错会显示为「还有未录分的比赛」、令人困惑。故 <code>PUT /tournaments/{id}</code> 把赛事<strong>转入</strong>积分态（<code>is_individual ∧ rating_category_id</code> 由假变真）这一步，必须<strong>同步回扫所有已存在的 Definitive+已绑场</strong>、对 <code>score1==score2</code> 当场拒绝翻 flag，把门控漏洞在转入边界补上。</p></div>
+<div class="warn"><strong>现有「赛事内排名」模块仍把 <code>0–0</code> 当真平局——须显式与 rating 解耦。</strong>本设计把 <code>0–0</code> 视作「未打」跳过，但同一批 match 行还喂给现有排名 / 积分榜逻辑：<code>logic/ranking/calculation.py:29</code> 用 <code>was_draw = (score1==score2)</code> 记一次<strong>平局</strong>并给 <code>draw_points</code>、<code>draws+1</code>。于是 round-robin 里一场<strong>未打的 <code>0–0</code></strong> 在现有赛事内名次里已被当平局计入。两套语义对 <code>0–0</code> 的解释相反，须明确：<strong>跨赛事 rating 与现有 per-tournament standings 相互独立</strong>；并择一处理——要么把「未打的 <code>0–0</code>」也从现有 standings 排除，要么接受并文档化该差异（赛事内名次含未打场的「平局」）。</div>
+
+<h3><span class="pill new">新增</span> <code>teams_x_users</code> —— 队伍↔账号绑定</h3>
+<pre><code>id, team_id FK (CASCADE), user_id FK (CASCADE),
+tournament_id FK (CASCADE)             -- 冗余存一份，仅为下面的唯一约束
+UNIQUE(team_id)                        -- 个人赛 1:1（一队最多一账号）
+UNIQUE(tournament_id, user_id)         -- 一账号在同一赛事最多一队（防自己打自己）</code></pre>
+
+<h3><span class="pill new">新增</span> <code>tournament_join_requests</code> —— 参赛申请</h3>
+<pre><code>id, tournament_id FK, user_id FK,
+status Enum('PENDING','APPROVED','REJECTED'),
+linked_team_id FK teams NULL,        -- 批准时自动创建的同名队伍
+trust_creator  BOOLEAN DEFAULT false,-- 是否把创建者加入我的托管管理员列表
+created
+UNIQUE(tournament_id, user_id)</code></pre>
+
+<h3><span class="pill new">新增</span> <code>user_trusted_managers</code> —— 托管管理员列表</h3>
+<pre><code>id, user_id FK (被管理者), manager_id FK users (托管管理员), created
+UNIQUE(user_id, manager_id)</code></pre>
+<p>语义：<code>manager_id</code> 在 <code>user_id</code> 的托管列表里 ⇒ 该管理员可<strong>免 <code>user_id</code> 同意</strong>，直接把其拉进自己创建的个人赛（自动建同名队伍 + 绑定）。</p>
+
+<h3><span class="pill new">新增</span> <code>tournament_scorers</code> —— 谁能在本赛事录分</h3>
+<pre><code>id, tournament_id FK, user_id FK   UNIQUE(tournament_id, user_id)</code></pre>
+
+<h3><span class="pill new">改动</span> <code>tournaments</code> 加列</h3>
+<pre><code>is_individual        BOOLEAN NOT NULL DEFAULT false   -- 个人赛（一队=一人）
+rating_category_id   BigInteger FK NULL               -- NULL = 不计积分
+settled_seq          BigInteger NULL                  -- 结算时分配的单调递增序号；类别内按它叠加（排序真相）
+settled_at           DateTimeTZ NULL                  -- 结算时间；NULL = 未结算</code></pre>
+<div class="tip"><strong><code>is_individual</code> 是闸门</strong>：gate「设置积分类别」「个人账号申请参赛」「托管管理员直接拉人」「队伍↔账号 1:1 绑定」。非个人赛在这些入口一律拒绝，团体赛完全不受影响。</div>
+
+<h3><span class="pill new">新增</span> 账本完整性约束（防删 / 防改坏链）</h3>
+<p>结算后 <code>rating_events</code> 构成不可断的链，但现有接口仍能删赛事 / 队伍 / 账号（删 user 还会级联删其名下俱乐部 + 全部赛事）。需补：</p>
+<ul>
+  <li><strong>已结算实体禁删</strong>：<code>settled_seq IS NOT NULL</code> 的赛事，及其队伍、已 <code>ACTIVE</code> 的 <code>player_ratings</code>，删除接口一律拒绝；要删须先走管理员级「撤销结算」回滚账本。</li>
+  <li><strong><code>rating_events</code> 外键用 <code>RESTRICT</code></strong>（或对 <code>user_id / match_id / tournament_id</code> 同时存审计快照值而非纯 FK），保证流水不会因上游删除而悬空。</li>
+  <li><strong>绑定（<code>teams_x_users</code>）锁定</strong>：仅 <code>settled_seq IS NULL</code> 时可增删改；结算后绑定锁定，如确需纠错须走管理员级撤销结算 / 重放（见 §5）。</li>
+</ul>
+<div class="warn"><strong>光给 <code>rating_events</code> 加 FK <code>RESTRICT</code> 拦不住应用层级联删除。</strong>删 user 走的是 <code>sql/users.py</code> 的 <code>delete_user_and_owned_clubs</code>：它<strong>逐表</strong>先删赛事内容、再删赛事、再删俱乐部——轮到删某行时其 FK 约束可能已被前面的删除满足，<code>RESTRICT</code> 形同虚设。故「已结算实体禁删」必须<strong>挂在应用层删除路径上</strong>，但<strong>仅守 user 删除入口不够</strong>：真正抹掉账本祖先的是底层 <code>sql_delete_tournament_completely</code>（<code>logic/tournaments.py</code>，按序删 matches→…→teams→tournament，无 transaction），以及 <code>delete_team</code>（<code>routes/teams.py</code>，单独可孤立 <code>teams_x_users</code> / <code>rating_events.user_id</code>）。故 <code>settled_seq IS NOT NULL</code> 守卫须挂在<strong>每条删除路径的入口（删任何子行之前）</strong>，而非寄望某个「最低共享函数」——删赛事有<strong>两条互不相交的路径</strong>：<code>DELETE /tournaments/{id}</code> 路由直接走<strong>浅删</strong> <code>sql_delete_tournament</code>（<code>routes/tournaments.py:135</code>，单行删除、不连带子表），而 user 级联走 <code>sql_delete_tournament_completely</code>（<strong>仅</strong> <code>sql/users.py:134</code> 调用，先逐层删 matches…teams 再 <code>sql_delete_tournament</code>）。<strong>只守 <code>sql_delete_tournament_completely</code> 会漏掉 <code>DELETE /tournaments/{id}</code> 路由</strong>（它根本不经过 <code>_completely</code>）；<strong>反过来只守两条都会调到的底层 <code>sql_delete_tournament</code> 又太迟</strong>——级联路径到那一步时 matches 等账本祖先已被删光。删队同理两条：<code>DELETE /teams/{id}</code> 走单删 <code>sql_delete_team</code>（<code>sql/teams.py:121</code>），级联走<strong>批量</strong> <code>sql_delete_teams_of_tournament</code>（<code>sql/teams.py:128</code>，非 <code>sql_delete_team</code>）。最稳妥是<strong>在赛事级入口（两条删赛事路径的入口 + 删队路由）一并校验 <code>settled_seq</code></strong>；且整段删除应<strong>包在单个 transaction 里</strong>（避免删一半留下断链）。FK <code>RESTRICT</code> 只作兜底的第二道防线。</div>
+<div class="warn"><strong>删 user 的唯一实路径是 demo 清理 cron，不是交互式删除——守卫语义须随之调整。</strong>全仓<strong>没有面向用户的删账号路由</strong>（<code>routes/</code> 内无），<code>delete_user_and_owned_clubs</code>（<code>sql/users.py:131</code>）<strong>仅</strong>被 demo 清理 cron 调用（<code>cronjobs/scheduling.py:25</code>，每 5 分钟清过期 DEMO 账号）。故上文「删 user 入口…要删须先走管理员级撤销结算」措辞在此路径不适用：cron 里没有管理员、也无人看拒绝提示。两点须落地：<strong>(1) 该路径守卫须「跳过并告警」而非 <code>raise</code></strong>——<code>run_cronjob</code> 把异常 <code>except Exception</code> 吞掉记 log（<code>scheduling.py:32-35</code>），而 <code>delete_demo_accounts</code> 的 for 循环<strong>无内层 try</strong>，任一已结算 DEMO 赛事会让<strong>整批 demo 删除在该次循环全数中止、并每 5 分钟无限重试</strong>；正确形态是<strong>逐 tournament 判 <code>settled_seq</code>、命中只跳过该赛事（非跳过整个 user）</strong>并发运营告警。<strong>注意守卫粒度须按真实的「赛事→俱乐部→账号」间接关系，而非「user 拥有赛事」</strong>：赛事无 owner-user 列，只挂 <code>tournaments.club_id</code>（<code>schema.py:24</code>），账号与俱乐部是 <strong>M:N</strong>（<code>users_x_clubs</code> 带 <code>OWNER/COLLABORATOR</code> 关系）。cron 走 <code>user → get_clubs_for_user_id</code>（<code>sql/clubs.py:55</code>，<strong>无 <code>relation='OWNER'</code> 过滤</strong>，返回该 user 所属<strong>任意</strong>俱乐部）<code>→ 俱乐部下所有赛事 → sql_delete_tournament_completely</code>（<code>sql/users.py:132-134</code>）。故守卫须落在该 per-club 循环内的 <strong>per-tournament 删除入口</strong>，「跳过该 user」既太粗（会滞留本可清的 demo 数据）又无明确语义。<strong>(2) 根因修复更稳：在结算路由按「该赛事所属俱乐部是否含 DEMO 成员」门控、禁止其结算</strong>（结算本就是管理员级动作；「DEMO-拥有的赛事」在 schema 无直接表示，须经俱乐部成员判定）——否则 DEMO 账号建 rated 个人赛、被结算、30 分钟后 cron 想删它即卡成<strong>永不可清的僵尸 demo 账号</strong>。<span class="small">（常见路径下 <code>setup_demo_account</code> 给 demo 账号独立俱乐部，跨俱乐部误删今日罕见；但措辞须与 membership-centric 的级联对齐。）</span></div>
+
+<h2 id="lifecycle"><span class="step">4</span>积分生命周期（关键）</h2>
+<p>这是本设计最容易出错的地方，单列说明。以一个<strong>该类别下全新账号</strong>为例：</p>
+<ol class="flow">
+  <li><strong>进赛</strong>：用户申请加入个人赛（或被其托管管理员直接拉入）→ <strong>自动创建同名队伍 + 同名 Player（加入该队）+ 绑定账号</strong>。<span class="small">（建 Player 是必需：现模型 Team 1—* Player，选手页 / 赛程 / 统计都依赖队内有 player，空 player 队会让这些页面出错。个人赛即「一队 = 一 Player = 一账号」。）</span></li>
+  <li><strong>预排名设临时初始分</strong>：创建者在「队伍预排名」给该无积分账号一个初始分 → <code>player_ratings</code> 建行，<code>status=PENDING</code>，<code>initial_rating=current_rating=X</code>。</li>
+  <li><strong>蛇形分组</strong>：队伍按各自账号的分（新账号用临时初始分，老账号用正式分）<strong>自动排序</strong>，据此蛇形分组。<em>此阶段分数只用于排序，不对外计为正式等级分。</em></li>
+  <li><strong>比赛进行</strong>：owner / 记分员录比分；引擎可<strong>预算</strong>出升降（projected）供预览，但<strong>不提交</strong>到正式分。</li>
+  <li><strong>赛事完成 → 创建者点「申请积分结算」</strong>：校验「<strong>所有队伍已绑账号</strong> + 所有新人已有临时初始分」，通过则进管理员审核队列。</li>
+  <li><strong>网站管理员审核</strong>：审核本赛事新账号的<strong>临时初始分</strong>是否合理，可调整后通过（<code>status→ACTIVE</code>，记 <code>approved_by/at</code>）。</li>
+  <li><strong>结算（batch）</strong>：审核通过后系统给赛事盖一个单调递增的 <code>settled_seq</code>，把<strong>整个赛事当一个批次</strong>：每场用双方<strong>入场前冻结分</strong>查表算 delta、求和，写入 <code>rating_events</code> 并更新 <code>current_rating</code>。至此该账号在类别内成为正式选手。</li>
+</ol>
+<div class="warn"><strong>为什么是 batch 而非赛内滚动分</strong>：积分赛中本就冻结、赛后才结算，等价于已选 batch。<strong>同一赛事内比赛先后顺序不影响结果</strong>（每场都用赛前冻结分算差），因此<strong>无需记录比赛完成时间</strong>。需要顺序的只有赛事<strong>之间</strong>，而顺序 = <code>settled_seq</code>（结算顺序）。</div>
+<div class="ok"><strong>结算是 append-only</strong>：<code>settled_seq</code> 只增不改，晚结算的老赛事只排在最后、<strong>不会回头打乱已结算赛事</strong>。仅当<strong>修改某个已结算赛事的历史比分</strong>时，才从它的 <code>settled_seq</code> <strong>往后</strong>重放、重建 <code>rating_events</code>。<strong>注意此「往后重放」会沿链向后级联到对手</strong>（改某账号中段入场分 → 改其后每场 delta → 改对手 delta…），影响范围 = 该类别内该 seq 之后出现过的账号闭包，<strong>并非「仅该场参与者」</strong>。<br>结算门槛：要求参与新账号的所有 <code>PENDING</code> 初始分已审核通过；全是老账号（无新人初始分待审）的赛事，创建者点「申请结算」后可直接结算。</div>
+
+<h2 id="engine"><span class="step">5</span>开球网积分引擎</h2>
+<p>开球网 ChinaTT 借鉴美国 USATT：<strong>按两名选手赛前等级分之差查表</strong>，赢家加分 = 输家减分；预期内（高分赢）交换少，爆冷（低分赢）交换多，分差过大且预期内则为 0。下表为<strong>开球网官方「chinaTT 积分标准」原表</strong>（已从开球网原文核对，非占位）：</p>
+<table>
+  <tr><th>会员间积分差距</th><th>积分高者得胜所加分<br><span class="small">（= 积分低者战败所减分）</span></th><th>积分低者获胜所加分<br><span class="small">（= 积分高者失败所减分）</span></th></tr>
+  <tr><td>0–12</td><td>8</td><td>8</td></tr>
+  <tr><td>13–37</td><td>7</td><td>10</td></tr>
+  <tr><td>38–62</td><td>6</td><td>13</td></tr>
+  <tr><td>63–87</td><td>5</td><td>16</td></tr>
+  <tr><td>88–112</td><td>4</td><td>20</td></tr>
+  <tr><td>113–137</td><td>3</td><td>25</td></tr>
+  <tr><td>138–162</td><td>2</td><td>30</td></tr>
+  <tr><td>163–187</td><td>2</td><td>35</td></tr>
+  <tr><td>188–212</td><td>1</td><td>40</td></tr>
+  <tr><td>213–237</td><td>1</td><td>45</td></tr>
+  <tr><td>238 以上</td><td>0</td><td>50</td></tr>
+</table>
+<div class="ok"><strong>已核对。</strong>开球网官方范例：A=2000、B=1950（差 50，落在 38–62）。A 胜 → A +6、B −6；A 负 → A −13、B +13。与上表一致。<br>来源：<a href="http://www.kaiqiu.wang/post/970.html">开球网《ChinaTT 即中国乒乓球水平积分制度》</a>（2024-11 更新，含官方积分标准图）。</div>
+<div class="tip"><strong>初始分预估参考</strong>（首次参赛者粗估，落地时作为创建者填初始分的提示）：约 400 入门 / 600 能稳定上台 / 1000–1400 业余中等 / 1600–2000 业余高手 / 2400+ 专业队水平。具体由创建者预排名时按选手水平填，管理员赛后审核。</div>
+<h3>引擎设计要点</h3>
+<ul>
+  <li><strong>纯函数 + 可插拔表</strong>：<code>backend/bracket/logic/rating/chinatt.py</code> → <code>compute_exchange(winner_rating, loser_rating) -&gt; (winner_gain, loser_loss)</code>。类别 <code>algorithm</code> 字段选表，默认 <code>chinatt</code>。<strong>与现有 per-tournament <code>teams.elo_score</code>（Swiss 用的赛事内 ELO，START=1200）是两套独立体系</strong>：跨赛事等级分统一叫 <strong>rating</strong>，不读 / 不写 <code>elo_score</code>，反之亦然，避免混用。</li>
+  <li><strong>batch-per-event（批量结算）</strong>：结算一个赛事时，每场都用双方<strong>入场前冻结分</strong>查表，赛内各场 delta 独立求和——<strong>赛内顺序无关</strong>，无需完成时间戳。</li>
+  <li><strong>赛事间按 <code>settled_seq</code> 叠加</strong>：类别内以结算顺序为<strong>唯一排序真相</strong>，append-only。<code>settled_seq</code> 是<strong>全局单调序列</strong>，同一类别内会有空洞——叠加 / 排序 / 重放<strong>都必须先按 <code>category_id</code> 过滤</strong>，只在本类别内计算。</li>
+  <li><strong><code>settled_seq</code> 分配必须防并发</strong>：两个管理员可能<strong>同时</strong>结算两个赛事，必须用 Postgres <code>SEQUENCE</code> 或 <code>SELECT … FOR UPDATE</code> <strong>串行化分配</strong>，杜绝重复 / 错序的 seq（seq 是排序真相，错一处全链错）。<span class="small"><strong>权衡（暂定保留全局）</strong>：选「全局单调、类别内有空洞」是为多类别共用一条时间线；代价是上面反复强调的「叠加/排序/重放都得先按 <code>category_id</code> 过滤」这个 footgun。替代方案是<strong>每类别一条独立序列</strong>（无空洞、更易推理、去掉该过滤）；二者落地前择一，本设计暂定全局并强制 category 过滤。</span></li>
+  <li><strong>结算 / 重放须在单个 transaction 内（防断链）</strong>：<code>settled_seq</code> 串行分配只解决<strong>排序</strong>，不等于<strong>原子性</strong>。结算是多行多表写（盖 <code>settled_seq</code>+<code>settled_at</code> → 批量写 <code>rating_events</code> → 批量更 <code>current_rating</code>），重放亦然。现有写路径多<strong>不带 transaction</strong>（如 <code>update_match_by_id</code> 先 <code>sql_update_match</code> 再 <code>recalculate_ranking_for_stage_item</code>，无 <code>database.transaction()</code>；对照 <code>routes/tournaments.py</code> 是有 transaction 的）。故结算 / 重放必须显式<strong>整段包进一个 <code>async with database.transaction()</code></strong>——seq 分配 + 全部 <code>rating_events</code> + 全部 <code>current_rating</code> + <code>settled_at</code> 同生共死，中途失败整体回滚，杜绝「写了一半的账本」。</li>
+  <li><strong>引擎内置自打校验（不止靠 DB 约束）</strong>：除 <code>UNIQUE(tournament_id, user_id)</code> 在库层挡「同赛事一账号两队」外，结算 / 重放引擎对每场<strong>显式断言 <code>user_id1 ≠ user_id2</code></strong>，命中则跳过并告警。重放 / 管理员级纠错会<strong>变动绑定</strong>，这条防御性校验避免任何瞬态错绑被算成「自己打自己」（赢家加分与输家减分落在同一 <code>current_rating</code> 上）。<strong>但须讲清边界：积分完整性是「按账号」而非「按真人」的</strong>——<code>users</code> 只有 <code>email/name</code>（<code>email</code> UNIQUE），无任何「账号 ↔ 真人」绑定。<strong>同一个人注册两个账号</strong>（或被创建者绑到两支同名队）即可让「自己打自己的两个账号」算出真实 W/L、刷分；<code>user_id1 ≠ user_id2</code> 只挡<strong>同一账号</strong>别名。Sybil（一人多号）抗性<strong>不在本设计范围</strong>，须显式文档化；若要防，把去重 / 标记可疑同人挂到既有的<strong>「管理员审核临时初始分」</strong>闸门（§4 步骤 6）这一天然落点。</li>
+  <li><strong>幂等 / 可改分</strong>：改某已结算赛事的比分 → 从该赛事 <code>settled_seq</code> <strong>往后（且同 <code>category_id</code>）</strong>重放、重建 rating_events；正常结算不触发全局重算。重放<strong>会向后级联到对手</strong>（改某账号中段入场分会改其后每场 delta，进而改对手 delta），影响范围 = 该类别内该 seq 之后出现过的账号闭包。<br><strong><code>matches_played</code> / <code>last_updated</code> 必须「派生」而非「自增」</strong>：因重放是<strong>从头重建 <code>rating_events</code></strong>（<code>current = initial + Σdelta</code>），若结算时简单 <code>matches_played += n</code>，重放后会<strong>漂移失真</strong>。故这两列须在<strong>同一 transaction 内</strong>由 <code>rating_events</code> <strong>重新算出</strong>（<code>matches_played = count(该账号的 rating_events)</code>、<code>last_updated</code> 取最新），结算与重放走同一套派生逻辑。<span class="small">（二者不参与 rating 计算——<code>current_rating</code> 纯由 <code>rating_events</code> 导出——故即便写错也只是统计展示失真，非账本错误；但既然便宜，按派生处理一并消除。）</span></li>
+  <li><strong>重放成本与运营策略（成熟类别 ≈ 全类别重算）</strong>：在成熟类别里「该 seq 之后的账号闭包」实际上≈<strong>从该 seq 起的整个类别</strong>，故改分纠错代价要正视、不能只挂一个 warning。落地要求：(a) 明确<strong>何时才允许</strong>改已结算赛事（默认仅管理员级纠错，见 §5，普通改分入口对已结算赛事关闭）；(b) 重放走<strong>异步任务 + 类别级锁</strong>，避免与新结算 / 其他重放交叉；(c) 重放期间该类别排行榜 / 结算结果<strong>标记 stale 或冻结</strong>，完成后再发布。这是链式积分的<strong>固有代价</strong>（入场分逐赛事冻结，后续赛事确实依赖被改赛事结果），非 bug，但须在 UI / 运营上讲清。</li>
+  <li><strong>提交受门槛控制</strong>：仅在 §4 结算阶段提交到 <code>current_rating</code>；之前一律是 projected。</li>
+</ul>
+
+<h2 id="perm"><span class="step">6</span>权限模型</h2>
+<table>
+  <tr><th>操作</th><th>谁可以</th></tr>
+  <tr><td>创建 / 维护积分类别</td><td><strong>网站管理员</strong>（<code>users.is_admin</code>）</td></tr>
+  <tr><td>审核临时初始分、触发结算</td><td><strong>网站管理员</strong></td></tr>
+  <tr><td>申请加入个人赛 / 勾选信任创建者</td><td>任意登录用户（对公开个人赛）</td></tr>
+  <tr><td>免审核直接拉某用户进赛</td><td>该用户<strong>托管管理员列表</strong>里的账号（即创建者）</td></tr>
+  <tr><td>管理自己的托管管理员列表（增删）</td><td>用户本人</td></tr>
+  <tr><td>批准申请 / 预排名设初始分 / 标记个人赛 / 选类别 / 授予录分权</td><td>赛事所属俱乐部成员（owner）</td></tr>
+  <tr><td>录入影响积分的比赛结果</td><td>俱乐部成员 <strong>+</strong> <code>tournament_scorers</code> 账号</td></tr>
+</table>
+<p>新增依赖：<code>user_is_admin</code>（守护类别管理 + 初始分审核）、<code>user_can_record_results(tournament_id)</code>（俱乐部成员 OR scorer，唯一「非俱乐部账号也能写」的入口）。</p>
+<div class="warn"><strong>这是本设计改动面最大的一处。</strong> 现有授权<strong>以俱乐部成员为主</strong>（写路径走 <code>get_user_access_to_tournament</code>：<code>users_x_clubs → club → tournament</code>）；读路径已有 <code>user_authenticated_or_public_dashboard</code> 回退——<strong>公开赛事（<code>dashboard_public=true</code>）已允许匿名读</strong>，<code>GET /tournaments/{id}</code> 等读接口已在用它，<strong>仅非公开赛事的读仍受门禁</strong>。真正要开口子的是<strong>写</strong>：scorer / 参赛申请 / 托管管理员都是<strong>非俱乐部账号要在别人俱乐部的赛事里写</strong>（外加非公开赛事下补读）。这不是「加几张表」，需显式处理：</div>
+<table>
+  <tr><th>新主体</th><th>需要的读权限</th><th>受影响的现有写入口（要加「OR」分支）</th></tr>
+  <tr><td><strong>scorer</strong>（录分）</td><td>要能读该赛事（公开赛事已通；<strong>仅非公开</strong>赛事的读仍受门禁）→ <code>user_can_record_results</code> 同时放行非公开赛事的读</td><td>所有 match / score 路由（按场录分、改分），逐个改挂 <code>user_can_record_results</code> 而非仅 <code>user_authenticated_for_tournament</code></td></tr>
+  <tr><td><strong>申请人 / 自动建队</strong></td><td>读公开个人赛页（已可匿名看 dashboard）</td><td>建 team + 绑定：须允许<strong>非俱乐部成员</strong>在该赛事建队（仅限自己那一支、经批准 / 托管），不能复用「俱乐部成员才能建队」的旧入口</td></tr>
+  <tr><td><strong>托管管理员</strong></td><td>同创建者（其本就是某俱乐部成员）</td><td>跨账号代建队 / 绑定，需校验目标 user 的托管列表命中</td></tr>
+</table>
+<p class="small">落地建议：新增统一依赖 <code>user_can_record_results(tournament_id)</code> = 俱乐部成员 OR <code>tournament_scorers</code> 命中；参赛 / 托管入口单独走 join-request / trusted-manager 校验，<strong>不</strong>挂俱乐部门禁。P2 / P3 的工作量应按「逐路由改授权」估，而非「加表」。</p>
+<div class="warn"><strong>scorer 授权须自验「match 属于本赛事」，不能信任 <code>match_dependency</code>。</strong>新依赖 <code>user_can_record_results(tournament_id)</code> 是按<strong>路径里的 <code>tournament_id</code></strong> 授权的，但取 match 走的 <code>match_dependency</code>（<code>routes/util.py:67</code>）<strong>有一处既有 bug</strong>：<code>where(matches.c.id == match_id and matches.c.tournament_id == tournament_id)</code> 用了 Python 的 <code>and</code>（非 SQLAlchemy 的 <code>&</code>），布尔短路后<strong>只剩右操作数、丢掉了 match_id ↔ tournament 的绑定校验</strong>（<code>round_dependency:24</code>、<code>team_dependency:84</code> 同样写法）。后果：tournament A 的 scorer 调 <code>/tournaments/{A}/matches/{B 的 match_id}</code> 时，授权按 A 通过、而 match 取到 B 的——<strong>可越赛事改分</strong>。本设计的 scorer 模型依赖该 scoping。<strong>注意修复有个二级陷阱</strong>：<code>matches</code> / <code>rounds</code> 表<strong>并无 <code>tournament_id</code> 列</strong>（match 经 <code>round_id → stage_items → stages.tournament_id</code> 才连到赛事），故朴素的 <code>and → &</code> 改法会引 <code>matches.c.tournament_id</code> <strong>KeyError</strong>；正确修法是<strong>联表 <code>stages</code> 取 <code>tournament_id</code> 作 scoping 子查询</strong>（<code>teams</code> 则确有 <code>tournament_id</code>，可直接比较）。<strong>本仓库已按此修复 <code>util.py</code> 三处依赖，并通过全部 162 项集成测试。</strong></div>
+
+<h2 id="flow"><span class="step">7</span>关键流程（对应需求）</h2>
+<ol class="flow">
+  <li><strong>申请加入（需求 1）</strong>：公开个人赛页 → 登录用户点「申请参赛」，可勾选「信任创建者（加入我的托管管理员）」→ PENDING 进创建者收件箱；批准后<strong>自动建同名队伍 + 绑定</strong>。若创建者已在该用户托管列表中，则<strong>直接拉入、免申请</strong>。
+  <div class="warn" style="margin:.4rem 0 0"><strong>「批准 → 建队 → 绑定」整段须包 transaction，靠唯一冲突触发整个 transaction 回滚（非靠调整插入顺序）。</strong>「一账号同赛事最多一队」只靠 <code>teams_x_users</code> 的 <code>UNIQUE(tournament_id, user_id)</code> 兜底，但现有 <code>create_team</code>（<code>routes/teams.py</code>）是<strong>无 transaction 的裸 insert</strong>、<code>teams</code> 本身无唯一约束，且 join-request 的 <code>UNIQUE</code> 只在<strong>申请</strong>行上、不在批准动作上。两个几乎同时的批准（或「批准」+「托管直接拉人」并发）会双双通过「是否已是成员」的读、再各自建队 → 第二条绑定虽被 <code>UNIQUE</code> 拒，但<strong>队行已插入</strong>，留下一支<strong>空 player 的孤儿队</strong>。故须把批准 / 自动建队 / 建 player / 绑定整段包进<strong>单个 <code>async with database.transaction()</code></strong>。<strong>修复点是「原子性」而非「插入顺序」</strong>：注意 <code>teams_x_users.team_id</code> 是<strong>非 DEFERRABLE 的外键</strong>（→ <code>teams.id</code>），所以「绑定行先于 team 插」<strong>物理上做不到</strong>（team 还不存在，FK 立即违例）——除非显式把该 FK 设成 <code>DEFERRABLE INITIALLY DEFERRED</code>，本设计不引入此复杂度。正确形态：<strong>同一 transaction 内</strong>建 team/player + 插绑定，第二个并发批准在插绑定时撞上 <code>UNIQUE(tournament_id, user_id)</code> 报错 → <strong>整个 transaction 回滚</strong>，那条已插的 team/player 行随之撤销、<strong>永不提交</strong>，孤儿队不复存在。（今天会留孤儿队，正是因为 <code>create_team</code> 此刻<strong>没有</strong>外层 transaction 兜底。）</div></li>
+  <li><strong>赛事计分设置（需求 2）</strong>：赛事设置勾「个人赛」+ 开「参与积分」+ 选类别（默认加华积分 <code>CanadaChinaTT</code>）。<strong>积分设置须在建赛时确定</strong>：<code>is_individual</code> / <code>rating_category_id</code> 一旦赛事已有队伍 / 比赛便<strong>不得翻转</strong>——已 populated 的团体赛<strong>禁止赛中改成个人赛</strong>（无回填路径，且会违反「一队一人」与「全员绑账号」前提），<code>PUT /tournaments</code> 须在此拒绝。</li>
+  <li><strong>授权录分（需求 3）</strong>：创建者把已绑定账号加入 <code>tournament_scorers</code>。</li>
+  <li><strong>初始分 + 升降（需求 4）</strong>：创建者预排名设临时初始分 → 蛇形分组；赛后<strong>网站管理员审核初始分 → 结算升降</strong>（见 §4）；新增<strong>类别排行榜</strong>页。</li>
+</ol>
+
+<h2 id="api"><span class="step">8</span>API 接口（高层）</h2>
+<table>
+  <tr><th>接口</th><th>权限</th></tr>
+  <tr><td><code>GET/POST/PUT/DELETE /rating-categories</code></td><td>管理员</td></tr>
+  <tr><td><code>GET /rating-categories/{id}/leaderboard</code></td><td>公开</td></tr>
+  <tr><td><code>GET /admin/rating-reviews</code> · <code>POST /admin/rating-reviews/{uid}/approve</code>（含可调初始分）</td><td>管理员</td></tr>
+  <tr><td><code>POST /tournaments/{id}/settlement-request</code>（创建者申请结算，校验全员绑定 / 初始分）</td><td>owner</td></tr>
+  <tr><td><code>POST /tournaments/{id}/settle</code>（管理员审核通过后批量结算，盖 <code>settled_seq</code>）</td><td>管理员</td></tr>
+  <tr><td><code>POST /tournaments/{id}/join-requests</code>（带 <code>trust_creator</code>）· <code>GET …</code> · <code>POST …/{rid}/approve</code></td><td>用户 / owner</td></tr>
+  <tr><td><code>POST /tournaments/{id}/participants</code>（托管管理员直接拉人，免审）</td><td>托管管理员</td></tr>
+  <tr><td><code>GET/POST/DELETE /me/trusted-managers</code></td><td>用户本人</td></tr>
+  <tr><td><code>PUT /teams/{id}/seed-rating</code>（预排名设临时初始分）</td><td>owner</td></tr>
+  <tr><td><code>PUT /tournaments/{id}</code>（<code>is_individual</code> / <code>rating_category_id</code>；<strong>赛事已有队伍 / 比赛后拒绝翻转 <code>is_individual</code>，团体赛不得赛中改成个人赛，见 §7 需求 2</strong>）· <code>GET/POST/DELETE /tournaments/{id}/scorers</code></td><td>owner</td></tr>
+</table>
+<div class="warn"><strong>公开排行榜 / 公开 dashboard 的投影须明确（隐私 + 未审核分泄露）。</strong>排行榜 <code>GET /rating-categories/{id}/leaderboard</code> 标「公开」，须明确<strong>排除 <code>PENDING</code> 行</strong>（或显式标「待审核」）——否则会把管理员<strong>尚未审核、创建者拍脑袋填的初始分</strong>挂到真实姓名上公开。另须先决定<strong>展示真名还是 handle</strong>：<strong>最大的既有泄露是公开 dashboard 本身</strong>——自动建的队 / player 都<strong>与账号同名</strong>（§2/§4），而 <code>get_teams</code> / rankings 读路径在公开赛事下已允许匿名读（<code>user_authenticated_or_public_dashboard</code>），即任何公开 rated 个人赛的参赛者真名<strong>本就已公开</strong>。排行榜只是再叠加跨赛事 <code>current_rating</code>。落地需就「公开赛事即公开参赛者身份」这一既成事实显式取舍。</div>
+
+<h2 id="frontend"><span class="step">9</span>前端改动</h2>
+<ul>
+  <li>赛事设置：「个人赛」勾选 + 「参与积分」开关 + 类别下拉（默认加华积分）。</li>
+  <li>公开个人赛页：「申请参赛」按钮 + 「信任创建者」勾选。</li>
+  <li>创建者「参赛申请」收件箱；「直接添加参赛者」（仅对信任自己的用户）。</li>
+  <li>「队伍预排名」页：给无积分队伍填临时初始分，列表按分自动排序、可视化蛇形分组。</li>
+  <li>创建者：赛事完成后「申请积分结算」按钮（含「全员绑账号 / 新人有初始分」校验提示）。</li>
+  <li>个人设置：「我的托管管理员」列表（增删）。</li>
+  <li>记分员（scorers）管理界面。</li>
+  <li>管理员后台：积分类别 CRUD + <strong>初始分审核队列</strong> + 一键结算。</li>
+  <li><strong>类别排行榜页</strong>（跨赛事等级分榜）。</li>
+</ul>
+
+<h2 id="phasing"><span class="step">10</span>分期落地</h2>
+<table>
+  <tr><td><span class="pill p1">P1</span></td><td>数据底座 + 结算</td><td>管理员标识 + 类别表 + 账号等级分（含 PENDING/ACTIVE）+ <code>is_individual</code> + 自动建队/绑定 + 预排名初始分 + 开球网引擎 + 管理员审核 + 结算 + 类别排行榜。参赛者入会与账号绑定统一走 P2 的自助申请 / 托管直接拉人（无手动绑定入口）。</td></tr>
+  <tr><td><span class="pill p2">P2</span></td><td>申请流 + 托管</td><td>join requests + 收件箱 + 公开页申请 + 托管管理员列表 + 免审直接拉人。</td></tr>
+  <tr><td><span class="pill p3">P3</span></td><td>授权录分</td><td>scorers + <code>user_can_record_results</code>。</td></tr>
+</table>
+
+<h2 id="open"><span class="step">11</span>已定事项</h2>
+<ol>
+  <li><strong>赛内滚动分 vs 批量结算？</strong> <span class="pill p1">已定</span> <strong>批量（batch-per-event）</strong>：赛中冻结、赛后整赛事一批结算，赛内顺序无关、无需完成时间戳；赛事之间按 <code>settled_seq</code>（结算顺序）append-only 叠加。</li>
+  <li><strong>全是老账号的赛事是否需管理员确认？</strong> <span class="pill p1">已定</span> 创建者点「申请结算」后<strong>可直接结算</strong>（无新人初始分待审时）。</li>
+  <li><strong>未绑定账号的队伍如何计分？</strong> <span class="pill p1">已定</span> <strong>强制全员绑定</strong>：rated 个人赛未全员绑账号则不允许结算（拦在「申请结算」入口）。</li>
+  <li><strong>托管管理员的代入范围？</strong> <span class="pill p1">已定</span> 仅允许托管管理员把用户拉进<strong>自己创建</strong>的个人赛；不支持替用户申请到他人赛事。</li>
+  <li><strong>分差恰好落界值时的归属</strong>（如 12 / 13 / 37）？ <span class="pill p1">已定</span> 按官方表闭区间取档：<code>diff ≤ 12</code>、<code>13 ≤ diff ≤ 37</code>…，落地以此为准。</li>
+</ol>
+
+<footer>
+  <p>积分系统高层设计 · CanadaChinaTT（加华积分）· bracket</p>
+</footer>
+</div>
+</body>
+</html>

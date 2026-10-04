@@ -1,12 +1,10 @@
-from decimal import Decimal
-
 from heliclockter import datetime_utc
 
 from bracket.database import database
 from bracket.logic.ranking.statistics import START_ELO
 from bracket.models.db.player import Player, PlayerBody, PlayerToInsert
 from bracket.schema import players
-from bracket.utils.id_types import PlayerId, TournamentId
+from bracket.utils.id_types import PlayerId, TeamId, TournamentId
 from bracket.utils.pagination import PaginationPlayers
 from bracket.utils.types import dict_without_none
 
@@ -17,7 +15,12 @@ async def get_all_players_in_tournament(
     not_in_team: bool = False,
     pagination: PaginationPlayers | None = None,
 ) -> list[Player]:
-    not_in_team_filter = "AND players.team_id IS NULL" if not_in_team else ""
+    # Membership lives in players_x_teams; the players table has no team column.
+    not_in_team_filter = (
+        "AND NOT EXISTS (SELECT 1 FROM players_x_teams WHERE player_id = players.id)"
+        if not_in_team
+        else ""
+    )
     limit_filter = "LIMIT :limit" if pagination is not None and pagination.limit is not None else ""
     offset_filter = (
         "OFFSET :offset" if pagination is not None and pagination.offset is not None else ""
@@ -66,7 +69,12 @@ async def get_player_count(
     *,
     not_in_team: bool = False,
 ) -> int:
-    not_in_team_filter = "AND players.team_id IS NULL" if not_in_team else ""
+    # Membership lives in players_x_teams; the players table has no team column.
+    not_in_team_filter = (
+        "AND NOT EXISTS (SELECT 1 FROM players_x_teams WHERE player_id = players.id)"
+        if not_in_team
+        else ""
+    )
     query = f"""
         SELECT count(*)
         FROM players
@@ -83,19 +91,40 @@ async def sql_delete_player(tournament_id: TournamentId, player_id: PlayerId) ->
     )
 
 
+async def get_player_ids_in_team(team_id: TeamId) -> list[PlayerId]:
+    rows = await database.fetch_all(
+        "SELECT player_id FROM players_x_teams WHERE team_id = :team_id", {"team_id": team_id}
+    )
+    return [PlayerId(row["player_id"]) for row in rows]
+
+
+async def sql_delete_player_if_orphaned(tournament_id: TournamentId, player_id: PlayerId) -> None:
+    """Drop the player record once no team references it anymore.
+
+    Players only exist as team members — there is no page to manage them on their
+    own, so an orphan would linger in the tournament forever.
+    """
+    remaining = await database.fetch_val(
+        "SELECT count(*) FROM players_x_teams WHERE player_id = :player_id",
+        {"player_id": player_id},
+    )
+    if remaining == 0:
+        await sql_delete_player(tournament_id, player_id)
+
+
 async def sql_delete_players_of_tournament(tournament_id: TournamentId) -> None:
     query = "DELETE FROM players WHERE tournament_id = :tournament_id"
     await database.fetch_one(query=query, values={"tournament_id": tournament_id})
 
 
-async def insert_player(player_body: PlayerBody, tournament_id: TournamentId) -> None:
-    await database.execute(
+async def insert_player(player_body: PlayerBody, tournament_id: TournamentId) -> PlayerId:
+    player_id = await database.execute(
         query=players.insert(),
         values=PlayerToInsert(
             **player_body.model_dump(),
             created=datetime_utc.now(),
             tournament_id=tournament_id,
             elo_score=START_ELO,
-            swiss_score=Decimal("0.0"),
         ).model_dump(),
     )
+    return PlayerId(player_id)

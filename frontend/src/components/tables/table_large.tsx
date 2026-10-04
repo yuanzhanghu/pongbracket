@@ -4,13 +4,9 @@ export default function TableLayoutLarge({ children }: any) {
   return (
     <>
       <ScrollArea>
-        <Table
-          horizontalSpacing="md"
-          verticalSpacing="xs"
-          striped
-          highlightOnHover
-          style={{ fontSize: 'inherit' }}
-        >
+        {/* Default (7px) vertical spacing — same row height as the plain
+            Mantine table in the participants tab. */}
+        <Table horizontalSpacing="md" striped highlightOnHover style={{ fontSize: 'inherit' }}>
           {children}
         </Table>
       </ScrollArea>

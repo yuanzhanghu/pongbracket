@@ -1,4 +1,6 @@
 import glob
+import html
+import re
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,7 +11,7 @@ from fastapi.responses import FileResponse
 from starlette.exceptions import HTTPException
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from bracket.config import Environment, config, environment, init_sentry
@@ -20,11 +22,15 @@ from bracket.routes import (
     auth,
     clubs,
     courts,
+    favorites,
     internals,
     matches,
+    participants,
     players,
     rankings,
+    ratings,
     rounds,
+    showcase,
     stage_item_inputs,
     stage_items,
     stages,
@@ -32,9 +38,15 @@ from bracket.routes import (
     tournaments,
     users,
 )
+from bracket.sql.tournaments import (
+    sql_get_public_tournament_name,
+    sql_get_tournament_is_individual,
+)
 from bracket.utils.alembic import alembic_run_migrations
 from bracket.utils.asyncio import AsyncioTasksManager
 from bracket.utils.db_init import init_db_when_empty
+from bracket.utils.i18n import parse_accept_language, set_individual_wording, set_language
+from bracket.utils.id_types import TournamentId
 from bracket.utils.logging import logger
 
 init_sentry()
@@ -43,10 +55,20 @@ init_sentry()
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await database.connect()
-    await init_db_when_empty()
 
+    # Bring an already-initialised DB up to head BEFORE any ORM query: init_db_when_empty
+    # reads `users` through the current schema, which fails if a new column hasn't been
+    # migrated in yet. A fresh/empty DB is initialised by init_db_when_empty
+    # (create_all + stamp head); running migrations from base on an empty DB would replay
+    # the whole chain, so only migrate when the schema already exists.
     if config.auto_run_migrations and environment is not Environment.CI:
-        alembic_run_migrations()
+        table_count = await database.fetch_val(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'"
+        )
+        if table_count > 1:
+            alembic_run_migrations()
+
+    await init_db_when_empty()
 
     if environment is Environment.PRODUCTION:
         start_cronjobs()
@@ -66,11 +88,15 @@ routers = {
     "Auth": auth.router,
     "Clubs": clubs.router,
     "Courts": courts.router,
+    "Favorites": favorites.router,
     "Internals": internals.router,
     "Matches": matches.router,
+    "Participants": participants.router,
     "Players": players.router,
     "Rankings": rankings.router,
+    "Ratings": ratings.router,
     "Rounds": rounds.router,
+    "Showcase": showcase.router,
     "Stage Items": stage_items.router,
     "Stage Item Inputs": stage_item_inputs.router,
     "Stages": stages.router,
@@ -142,6 +168,37 @@ async def add_process_time_header(request: Request, call_next: RequestResponseEn
     return response
 
 
+# Added last, so it is the outermost middleware: the language is bound to the request
+# context before any route handler, dependency or exception handler runs. ContextVars are
+# per-task and every request runs in its own task, so the value cannot leak between them.
+@app.middleware("http")
+async def set_request_language(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    set_language(parse_accept_language(request.headers.get("accept-language")))
+    return await call_next(request)
+
+
+# Every tournament-scoped route is mounted under this prefix.
+TOURNAMENT_PATH_PATTERN = re.compile(r"/tournaments/(\d+)(?:/|$)")
+
+
+@app.middleware("http")
+async def set_request_wording(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    """Bind the wording of team-flavoured messages to the tournament being addressed.
+
+    A "team" in an individual tournament is a single person, so its messages say 参赛人员
+    (participant) instead of 队伍. Resolved here, once per request, because those messages
+    are raised all over the routes, sql and logic layers, most of which never load the
+    tournament they belong to.
+    """
+    match = TOURNAMENT_PATH_PATTERN.search(request.url.path)
+    set_individual_wording(
+        await sql_get_tournament_is_individual(TournamentId(int(match.group(1))))
+        if match is not None
+        else False
+    )
+    return await call_next(request)
+
+
 @app.exception_handler(HTTPException)
 async def validation_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
@@ -164,9 +221,22 @@ if config.serve_frontend:
 
     frontend_root = Path("frontend-dist")
     allowed_paths = list(glob.iglob("frontend-dist/**/*", recursive=True))
+    index_html = (frontend_root / Path("index.html")).read_text()
+
+    # Chat apps (WeChat, Slack, ...) build their link preview from the HTML they
+    # fetch, without running the app's JavaScript, so the shared card would read
+    # the placeholder site name for every tournament. These name the tournament in
+    # the HTML itself; the browser tab is still titled by `DocumentHead` on mount.
+    tournament_path_pattern = re.compile(r"^tournaments/(\d{1,9})(?:/|$)")
+    title_tag_pattern = re.compile(r"<title>.*?</title>", re.DOTALL)
+
+    def index_html_titled(name: str) -> str:
+        title = html.escape(name)
+        tags = f'<title>{title}</title><meta property="og:title" content="{title}" />'
+        return title_tag_pattern.sub(lambda _: tags, index_html, count=1)
 
     @app.get("/{full_path:path}")
-    async def frontend(full_path: str) -> FileResponse:
+    async def frontend(full_path: str) -> Response:
         path = frontend_root / Path(full_path)
 
         # Checking `str(path) in allowed_paths` should be enough here but we check for more cases
@@ -178,5 +248,13 @@ if config.serve_frontend:
             and frontend_root in path.parents
         ):
             return FileResponse(path)
+
+        tournament_match = tournament_path_pattern.match(full_path)
+        if tournament_match is not None:
+            name = await sql_get_public_tournament_name(
+                TournamentId(int(tournament_match.group(1)))
+            )
+            if name is not None:
+                return HTMLResponse(index_html_titled(name))
 
         return FileResponse(frontend_root / Path("index.html"))

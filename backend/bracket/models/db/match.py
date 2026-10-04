@@ -1,7 +1,8 @@
+import json
 from decimal import Decimal
 
 from heliclockter import datetime_utc, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from bracket.models.db.court import Court
 from bracket.models.db.shared import BaseModelORM
@@ -24,6 +25,21 @@ class MatchBaseInsertable(BaseModelORM):
     court_id: CourtId | None = None
     stage_item_input1_conflict: bool
     stage_item_input2_conflict: bool
+    # Per-game scores, e.g. [[11, 9], [11, 7], [9, 11], [11, 6]] (input1 vs input2 per game).
+    games: list[list[int]] | None = None
+    # Best-of format: 3 = first to 2 games, 5 = first to 3 games, etc.
+    best_of: int = 3
+    # Walkover: 1 = input1 forfeited, 2 = input2 forfeited, None = no forfeit. The
+    # non-forfeiting side wins (win_points), the forfeiting side gets 0, and the
+    # winner's games (局分) and points (小分) are left unchanged (scores stay 0-0).
+    forfeit_input: int | None = None
+
+    @field_validator("games", mode="before")
+    @classmethod
+    def _parse_games(cls, value: object) -> object:
+        if isinstance(value, str):
+            return json.loads(value) if value.strip() else None
+        return value
 
     @property
     def end_time(self) -> datetime_utc:
@@ -44,6 +60,11 @@ class Match(MatchInsertable):
     stage_item_input2: StageItemInput | None = None
 
     def get_winner(self) -> StageItemInput | None:
+        if self.forfeit_input == 1:
+            return self.stage_item_input2
+        if self.forfeit_input == 2:
+            return self.stage_item_input1
+
         if self.stage_item_input1_score > self.stage_item_input2_score:
             return self.stage_item_input1
         if self.stage_item_input1_score < self.stage_item_input2_score:
@@ -93,6 +114,9 @@ class MatchBody(BaseModelORM):
     court_id: CourtId | None = None
     custom_duration_minutes: int | None = None
     custom_margin_minutes: int | None = None
+    games: list[list[int]] | None = None
+    best_of: int = 3
+    forfeit_input: int | None = None
 
 
 class MatchCreateBodyFrontend(BaseModelORM):
@@ -109,6 +133,7 @@ class MatchCreateBody(MatchCreateBodyFrontend):
     margin_minutes: int
     custom_duration_minutes: int | None = None
     custom_margin_minutes: int | None = None
+    best_of: int = 3
 
 
 class MatchRescheduleBody(BaseModelORM):
@@ -129,7 +154,6 @@ class SuggestedMatch(BaseModel):
     stage_item_input1: StageItemInput
     stage_item_input2: StageItemInput
     elo_diff: Decimal
-    swiss_diff: Decimal
     is_recommended: bool
     times_played_sum: int
     player_behind_schedule_count: int

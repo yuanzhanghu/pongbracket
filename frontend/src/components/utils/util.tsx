@@ -74,6 +74,20 @@ export interface Pagination {
   sort_direction: 'asc' | 'desc';
 }
 
-export const setTitle = (title: string) => {
-  document.title = title;
+let titleClaim: { path: string; render: () => string } | null = null;
+
+/**
+ * Pages that need their own document title call this
+ * during render. The claim is scoped to the path it was made on so it cannot leak
+ * onto the next route, and it is kept as a thunk so `DocumentHead` can re-evaluate
+ * it after a language change without the page having to re-render.
+ */
+export const setTitle = (title: string | (() => string)) => {
+  const render = typeof title === 'function' ? title : () => title;
+  titleClaim = { path: window.location.pathname, render };
+  document.title = render();
 };
+
+/** The title thunk claimed by the page currently on screen, if any. */
+export const currentTitleClaim = () =>
+  titleClaim != null && titleClaim.path === window.location.pathname ? titleClaim.render : null;

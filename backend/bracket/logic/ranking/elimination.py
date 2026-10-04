@@ -27,6 +27,7 @@ def get_inputs_to_update_in_subsequent_elimination_rounds(
         for match in current_round.matches
         if match_ids is None or match.id in match_ids
     }
+    updated_match_ids: set[MatchId] = set()
     subsequent_rounds = [round_ for round_ in stage_item.rounds if round_.id > current_round.id]
     subsequent_rounds.sort(key=lambda round_: round_.id)
     subsequent_matches = [match for round_ in subsequent_rounds for match in round_.matches]
@@ -63,12 +64,15 @@ def get_inputs_to_update_in_subsequent_elimination_rounds(
                     "stage_item_input2": updated_inputs[1],
                 }
             )
+            updated_match_ids.add(subsequent_match.id)
 
-    # All affected matches need to be updated except for the inputs.
+    # Only return matches whose inputs actually changed. Returning unchanged current-round
+    # matches would overwrite DB rows with stale in-memory values when this runs once per
+    # round over a whole stage item (e.g. propagating walkovers on stage activation).
     return {
         match_id: match
         for match_id, match in affected_matches.items()
-        if match_ids is None or match.id not in match_ids
+        if match_id in updated_match_ids
     }
 
 

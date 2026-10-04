@@ -11,6 +11,40 @@ export async function createStageItem(
     .catch((response: any) => handleRequestError(response));
 }
 
+export async function createRoundRobinGroups(
+  tournament_id: number,
+  stage_id: number,
+  group_count: number,
+  team_count: number,
+  method: 'snake' | 'block' = 'snake'
+) {
+  return createAxios()
+    .post(`tournaments/${tournament_id}/stage_items/round_robin_groups`, {
+      stage_id,
+      group_count,
+      team_count,
+      method,
+    })
+    .catch((response: any) => handleRequestError(response));
+}
+
+export async function createEliminationFromSources(
+  tournament_id: number,
+  stage_id: number,
+  name: string | null,
+  sources: { stage_item_id: number; positions: number }[],
+  take: 'top' | 'bottom' = 'top'
+) {
+  return createAxios()
+    .post(`tournaments/${tournament_id}/stage_items/elimination_from_sources`, {
+      stage_id,
+      name,
+      sources,
+      take,
+    })
+    .catch((response: any) => handleRequestError(response));
+}
+
 export async function updateStageItem(
   tournament_id: number,
   stage_item_id: number,

@@ -21,6 +21,7 @@ from bracket.models.db.team import FullTeamWithPlayers
 from bracket.models.db.util import StageWithStageItems
 from bracket.sql.rounds import get_next_round_name, sql_create_round
 from bracket.sql.stage_items import get_stage_item
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import StageId, StageItemId, TournamentId
 from tests.integration_tests.mocks import MOCK_NOW
 
@@ -34,8 +35,6 @@ async def create_rounds_for_new_stage_item(
             rounds_count = get_number_of_rounds_to_create_round_robin(stage_item.team_count)
         case StageType.SINGLE_ELIMINATION:
             rounds_count = get_number_of_rounds_to_create_single_elimination(stage_item.team_count)
-        case StageType.SWISS:
-            return None
         case other:
             raise NotImplementedError(f"No round creation implementation for {other}")
 
@@ -59,12 +58,10 @@ async def build_matches_for_stage_item(stage_item: StageItem, tournament_id: Tou
             await build_round_robin_stage_item(tournament_id, stage_item_with_rounds)
         case StageType.SINGLE_ELIMINATION:
             await build_single_elimination_stage_item(tournament_id, stage_item_with_rounds)
-        case StageType.SWISS:
-            return None
 
         case _:
             raise HTTPException(
-                400, f"Cannot automatically create matches for stage type {stage_item.type}"
+                400, tr("阶段类型 {type} 无法自动创建对阵").format(type=stage_item.type)
             )
 
     await recalculate_ranking_for_stage_item(tournament_id, stage_item_with_rounds)
@@ -79,13 +76,14 @@ def determine_available_inputs(
 
     Inputs are either from:
     - Teams directly
-    - Previous ROUND_ROBIN or SWISS stage items (tentative options)
+    - Previous ROUND_ROBIN stage items (tentative options)
     """
     all_team_options = {
         team.id: StageItemInputOptionFinal(team_id=team.id, already_taken=False) for team in teams
     }
-    # Add inputs from non-elimination stage items that can be used in the next stage.
-    # Elimination stage items have no "outputs" but are final.
+    # Add inputs from previous stage items that can feed a later stage. Round-robin
+    # exposes a ranking for every position; elimination items expose their finishing
+    # order too (1st = bracket winner, 2nd = runner-up, ...), so their winners can advance.
     all_tentative_options = {
         (stage_item.id, winner_position): StageItemInputOptionTentative(
             winner_from_stage_item_id=stage_item.id,
@@ -94,7 +92,7 @@ def determine_available_inputs(
         )
         for stage in stages
         for stage_item in stage.stage_items
-        if stage_item.type in {StageType.ROUND_ROBIN, StageType.SWISS}
+        if stage_item.type in {StageType.ROUND_ROBIN, StageType.SINGLE_ELIMINATION}
         for winner_position in range(1, stage_item.team_count + 1)
     }
 

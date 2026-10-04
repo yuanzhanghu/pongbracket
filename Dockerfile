@@ -7,9 +7,15 @@ ENV NODE_ENV=production
 
 COPY frontend .
 
+# Relative API base so the app works behind any host (localhost:8400 or a
+# reverse-proxied domain like https://bracket.ai1to1.com). Override via build arg.
+ARG VITE_API_BASE_URL=/api
+# --dangerously-allow-all-builds: newer pnpm (10+) blocks dependency build scripts
+# (esbuild) unless approved, and the approval config location changes between pnpm
+# versions; apk installs whatever pnpm is current, so allow builds via the flag.
 RUN apk add pnpm && \
-    CI=true pnpm install && \
-    VITE_API_BASE_URL=http://localhost:8400/api pnpm build
+    CI=true pnpm install --dangerously-allow-all-builds && \
+    VITE_API_BASE_URL=$VITE_API_BASE_URL pnpm build
 
 # Build backend image that also serves frontend (stored in `/app/frontend-dist`)
 FROM python:3.14-alpine3.22

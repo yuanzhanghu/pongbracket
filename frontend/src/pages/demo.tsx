@@ -1,10 +1,11 @@
-import { Alert, Button, Checkbox, Container, Paper, Title } from '@mantine/core';
+import { Alert, Button, Checkbox, Container, Group, Paper, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
+import LanguageSwitcher from '@components/utils/language_switcher';
 import { ClientOnly } from '@components/utils/react';
 import { HCaptchaInput } from '@components/utils/util';
 import { tokenPresent } from '@services/local_storage';
@@ -42,6 +43,9 @@ export default function CreateDemoAccountPage() {
 
   return (
     <Container size={640} my={30}>
+      <Group justify="flex-end">
+        <LanguageSwitcher />
+      </Group>
       <Title className={classes.title} ta="center">
         {t('create_demo_account_title')}
       </Title>

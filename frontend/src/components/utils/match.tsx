@@ -1,7 +1,12 @@
 import { MatchWithDetails } from '@openapi';
 import dayjs from 'dayjs';
+import i18n from '../../../i18n';
 import { formatStageItemInput } from './stage_item_input';
 import { Translator } from './types';
+
+function formatWinnerOfMatch(match_1: string, match_2: string) {
+  return i18n.t('winner_of_match', { match_1, match_2 });
+}
 
 export interface SchedulerSettings {
   eloThreshold: number;
@@ -49,7 +54,7 @@ export function formatMatchInput1(
   const winner = matchesLookup[match.stage_item_input1_winner_from_match_id].match;
   const match_1 = formatMatchInput1(t, stageItemsLookup, matchesLookup, winner);
   const match_2 = formatMatchInput2(t, stageItemsLookup, matchesLookup, winner);
-  return `Winner of match ${match_1} - ${match_2}`;
+  return formatWinnerOfMatch(match_1, match_2);
 }
 
 export function formatMatchInput2(
@@ -67,5 +72,5 @@ export function formatMatchInput2(
   const winner = matchesLookup[match.stage_item_input2_winner_from_match_id].match;
   const match_1 = formatMatchInput1(t, stageItemsLookup, matchesLookup, winner);
   const match_2 = formatMatchInput2(t, stageItemsLookup, matchesLookup, winner);
-  return `Winner of match ${match_1} - ${match_2}`;
+  return formatWinnerOfMatch(match_1, match_2);
 }

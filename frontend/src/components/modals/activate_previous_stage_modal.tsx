@@ -12,10 +12,12 @@ export default function ActivatePreviousStageModal({
   tournamentId,
   swrStagesResponse,
   swrRankingsPerStageItemResponse,
+  disabled = false,
 }: {
   tournamentId: number;
   swrStagesResponse: SWRResponse<StagesWithStageItemsResponse>;
   swrRankingsPerStageItemResponse: SWRResponse<StageRankingResponse>;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [opened, setOpened] = useState(false);
@@ -61,6 +63,7 @@ export default function ActivatePreviousStageModal({
         size="md"
         mb="10"
         color="indigo"
+        disabled={disabled}
         leftSection={<IconSquareArrowLeft size={24} />}
         onClick={async () => {
           setOpened(true);

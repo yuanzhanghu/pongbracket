@@ -17,3 +17,16 @@ backend/static
 backend/frontend-dist
 
 /process-compose.yml
+_demo/
+e2e/.model_*.env
+e2e/.active_model.env
+e2e/.auth/
+e2e/logs/
+e2e/tests/__pycache__/
+e2e/e2e_bracket.db
+e2e/e2e_bracket.db-wal
+e2e/e2e_bracket.db-shm
+.autotask/
+
+# Playwright MCP console-log dumps (tool artifacts, not source)
+.playwright-mcp/

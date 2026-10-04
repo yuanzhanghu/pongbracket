@@ -1,5 +1,4 @@
 import {
-  Alert,
   Anchor,
   Box,
   Button,
@@ -7,16 +6,17 @@ import {
   Container,
   Group,
   Paper,
+  PasswordInput,
   TextInput,
   Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconAlertCircle, IconArrowLeft } from '@tabler/icons-react';
+import { IconArrowLeft } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import { PasswordStrength } from '@components/utils/password';
+import LanguageSwitcher from '@components/utils/language_switcher';
 import { ClientOnly } from '@components/utils/react';
 import { HCaptchaInput } from '@components/utils/util';
 import { registerUser } from '@services/user';
@@ -44,48 +44,54 @@ export default function CreateAccountPage() {
     },
 
     validate: {
-      name: (value) => (value !== '' ? null : t('empty_name_validation')),
-      email: (value) => (/^\S+@\S+$/.test(value) ? null : t('empty_email_validation')),
-      password: (value) => (value !== '' ? null : t('empty_password_validation')),
+      name: (value) =>
+        value.trim() !== ''
+          ? value.includes('@')
+            ? t('name_no_at_validation')
+            : null
+          : t('empty_name_validation'),
+      // Email is optional (some users prefer not to share one); validate the
+      // format only when something was entered.
+      email: (value) =>
+        value === '' || /^\S+@\S+$/.test(value) ? null : t('invalid_email_validation'),
+      password: (value) => (value.length >= 4 ? null : t('too_short_password_validation')),
     },
   });
 
   return (
     <Container size={460} my={30}>
+      <Group justify="flex-end">
+        <LanguageSwitcher />
+      </Group>
       <Title className={classes.title} ta="center">
         {t('create_account_title')}
       </Title>
       <Paper withBorder shadow="md" p={30} radius="md" mt="xl">
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          mb={16}
-          title={t('create_account_alert_title')}
-          color="red"
-          radius="md"
-        >
-          {t('create_account_alert_description')}
-        </Alert>
         <form
           onSubmit={form.onSubmit(async (values) => {
             await registerAndRedirect(values);
           })}
         >
           <TextInput
-            label={t('email_input_label')}
-            placeholder={t('email_input_placeholder')}
-            required
-            type="email"
-            {...form.getInputProps('email')}
-          />
-          <TextInput
             label={t('name_input_label')}
             placeholder={t('name_input_placeholder')}
             required
-            mt="lg"
-            mb="lg"
             {...form.getInputProps('name')}
           />
-          <PasswordStrength form={form} />
+          <TextInput
+            label={t('email_optional_input_label')}
+            placeholder={t('email_input_placeholder')}
+            type="email"
+            mt="lg"
+            mb="lg"
+            {...form.getInputProps('email')}
+          />
+          <PasswordInput
+            label={t('password_input_label')}
+            placeholder={t('password_input_placeholder')}
+            required
+            {...form.getInputProps('password')}
+          />
           <Group justify="space-between" mt="lg" className={classes.controls}>
             <ClientOnly>
               <HCaptchaInput

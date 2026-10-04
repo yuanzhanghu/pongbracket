@@ -21,7 +21,7 @@ const serviceList: ServiceProps[] = [
   {
     title: "Flexible Tournament Builder",
     description:
-      "Add multiple swiss, single elimination and round-robin elements to the tournament.",
+      "Add multiple single elimination and round-robin elements to the tournament.",
     icon: <IoBuildOutline size={48} />,
   },
   {

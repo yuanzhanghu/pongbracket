@@ -1,12 +1,9 @@
 import { Center, Divider, Group, Tooltip, UnstyledButton } from '@mantine/core';
 import {
   Icon,
-  IconBook,
   IconBrackets,
-  IconBrandGithub,
-  IconBrowser,
   IconCalendar,
-  IconDots,
+  IconChartLine,
   IconHome,
   IconScoreboard,
   IconSettings,
@@ -18,8 +15,9 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
 
 import PreloadLink from '@components/utils/link';
+import { useTeamNamingContext } from '@components/utils/team_naming';
 import { capitalize } from '@components/utils/util';
-import { getBaseApiUrl } from '@services/adapter';
+import { getUser } from '@services/adapter';
 import classes from './_main_links.module.css';
 
 interface MainLinkProps {
@@ -42,7 +40,8 @@ function MainLinkMobile({ item, pathName }: { item: MainLinkProps; pathName: Str
       >
         <Group className={classes.mobileLinkGroup}>
           <item.icon stroke={1.5} />
-          <p style={{ marginLeft: '0.5rem' }}>{item.label}</p>
+          {/* A <p> here would add its 1rem default margins to every row. */}
+          <span style={{ marginLeft: '0.5rem' }}>{item.label}</span>
         </Group>
         <Divider />
       </UnstyledButton>
@@ -71,30 +70,27 @@ function MainLink({ item, pathName }: { item: MainLinkProps; pathName: String })
 
 export function getBaseLinksDict() {
   const { t } = useTranslation();
+  const swrUser = getUser();
+  const isAdmin = swrUser.data?.data?.is_admin === true;
 
   return [
-    { link: '/clubs', label: capitalize(t('clubs_title')), links: [], icon: IconUsers },
+    // Clubs are implicit (one hidden personal club per account); no club UI.
     { link: '/', label: capitalize(t('tournaments_title')), links: [], icon: IconHome },
+    {
+      link: '/my-rating',
+      label: t('my_rating_title'),
+      links: [],
+      icon: IconChartLine,
+    },
     {
       link: '/user',
       label: t('user_title'),
       links: [],
       icon: IconUser,
     },
-    {
-      icon: IconDots,
-      link: '',
-      label: t('more_title'),
-      links: [
-        { link: 'https://docs.bracketapp.nl/', label: t('website_title'), icon: IconBrowser },
-        {
-          link: 'https://github.com/evroon/bracket',
-          label: t('github_title'),
-          icon: IconBrandGithub,
-        },
-        { link: `${getBaseApiUrl()}/docs`, label: t('api_docs_title'), icon: IconBook },
-      ],
-    },
+    ...(isAdmin
+      ? [{ link: '/admin', label: t('admin_panel_title'), links: [], icon: IconSettings }]
+      : []),
   ];
 }
 
@@ -109,6 +105,7 @@ export function getBaseLinks() {
 export function TournamentLinks({ tournament_id }: any) {
   const location = useLocation();
   const { t } = useTranslation();
+  const teamContext = useTeamNamingContext(tournament_id);
   const tm_prefix = `/tournaments/${tournament_id}`;
   const pathName = location.pathname.replace('[id]', tournament_id).replace(/\/+$/, '');
 
@@ -119,13 +116,8 @@ export function TournamentLinks({ tournament_id }: any) {
       link: `${tm_prefix}/stages`,
     },
     {
-      icon: IconUser,
-      label: capitalize(t('players_title')),
-      link: `${tm_prefix}/players`,
-    },
-    {
       icon: IconUsers,
-      label: capitalize(t('teams_title')),
+      label: capitalize(t('teams_title', { context: teamContext })),
       link: `${tm_prefix}/teams`,
     },
     {
@@ -140,7 +132,7 @@ export function TournamentLinks({ tournament_id }: any) {
     },
     {
       icon: IconScoreboard,
-      label: capitalize(t('rankings_title')),
+      label: capitalize(t('scoring_settings_title')),
       link: `${tm_prefix}/rankings`,
     },
     {

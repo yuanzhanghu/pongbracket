@@ -16,6 +16,7 @@ import { useLocation } from 'react-router';
 
 import { Brand } from '@components/navbar/_brand';
 import { getBaseLinks, getBaseLinksDict } from '@components/navbar/_main_links';
+import LanguageSwitcher from '@components/utils/language_switcher';
 import PreloadLink from '@components/utils/link';
 import classes from './_layout.module.css';
 
@@ -91,17 +92,21 @@ export function HeaderAction({ links, navbarState, breadcrumbs }: HeaderActionPr
             {breadcrumbs}
           </Group>
         </Center>
-        <Group gap={5} visibleFrom="sm">
-          {items}
-          <ActionIcon
-            variant="default"
-            onClick={() => setColorScheme(computedColorScheme === 'light' ? 'dark' : 'light')}
-            size={30}
-            ml="1rem"
-          >
-            <IconSun size={16} className={classes.light} />
-            <IconMoonStars size={16} className={classes.dark} />
-          </ActionIcon>
+        <Group gap={5}>
+          <Group gap={5} visibleFrom="sm">
+            {items}
+            <ActionIcon
+              variant="default"
+              onClick={() => setColorScheme(computedColorScheme === 'light' ? 'dark' : 'light')}
+              size={30}
+              ml="1rem"
+            >
+              <IconSun size={16} className={classes.light} />
+              <IconMoonStars size={16} className={classes.dark} />
+            </ActionIcon>
+          </Group>
+          {/* Outside the `visibleFrom` group: reachable on mobile too. */}
+          <LanguageSwitcher />
         </Group>
       </Container>
     </AppShell.Header>

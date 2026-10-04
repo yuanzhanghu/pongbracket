@@ -55,6 +55,17 @@ export default function StagesPage() {
       </Stack>
     );
   } else {
+    // Which stage the activate endpoint would move to, mirroring its query: the nearest
+    // inactive stage on either side of the active one (by id). Nothing there means the
+    // request would only come back with 没有上一个/下一个阶段, so the button is disabled.
+    const activeStageId = stages.find((stage) => stage.is_active)?.id;
+    const hasPreviousStage = stages.some(
+      (stage) => !stage.is_active && stage.id < (activeStageId ?? Infinity)
+    );
+    const hasNextStage = stages.some(
+      (stage) => !stage.is_active && stage.id > (activeStageId ?? -1)
+    );
+
     content = (
       <>
         <Group grow mt="1rem" maw="30rem">
@@ -62,11 +73,13 @@ export default function StagesPage() {
             tournamentId={tournamentData.id}
             swrStagesResponse={swrStagesResponse}
             swrRankingsPerStageItemResponse={swrRankingsPerStageItemResponse}
+            disabled={!hasPreviousStage}
           />
           <ActivateNextStageModal
             tournamentId={tournamentData.id}
             swrStagesResponse={swrStagesResponse}
             swrRankingsPerStageItemResponse={swrRankingsPerStageItemResponse}
+            disabled={!hasNextStage}
           />
         </Group>
         <Group mt="1rem" align="top">

@@ -22,7 +22,7 @@ const features: FeatureProps[] = [
     icon: <PiTreeStructure fill={"#a581e9"} size={64} />,
     title: "Choose format",
     description:
-      "Add swiss, elimination or round-robing items to the tournament. Multiple stages are supported.",
+      "Add elimination or round-robin items to the tournament. Multiple stages are supported.",
   },
   {
     icon: <BsCalendar4Week fill={"#a581e9"} size={64} />,

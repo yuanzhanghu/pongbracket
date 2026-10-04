@@ -1,17 +1,18 @@
-import { Button, Checkbox, Modal, MultiSelect, Tabs, TextInput } from '@mantine/core';
+import { Autocomplete, Button, Checkbox, Modal, TagsInput, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconUser, IconUsers, IconUsersPlus } from '@tabler/icons-react';
+import { IconUsersPlus } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SWRResponse } from 'swr';
 
 import SaveButton from '@components/buttons/save';
-import { MultiTeamsInput } from '@components/forms/player_create_csv_input';
-import { Player, TeamsWithPlayersResponse } from '@openapi';
-import { getPlayers } from '@services/adapter';
-import { createTeam, createTeams } from '@services/team';
+import { useTeamNamingContext } from '@components/utils/team_naming';
+import { TeamsWithPlayersResponse } from '@openapi';
+import { handleRequestError } from '@services/adapter';
+import { addParticipant, getAddableParticipants } from '@services/rating';
+import { createTeam } from '@services/team';
 
-function MultiTeamTab({
+function TeamForm({
   tournament_id,
   swrTeamsResponse,
   setOpened,
@@ -21,91 +22,80 @@ function MultiTeamTab({
   setOpened: any;
 }) {
   const { t } = useTranslation();
-  const form = useForm({
-    initialValues: {
-      names: '',
-      active: true,
-    },
+  const teamContext = useTeamNamingContext(tournament_id);
+  const isIndividual = teamContext === 'individual';
 
-    validate: {
-      names: (value) => (value.length > 0 ? null : t('at_least_one_team_validation')),
-    },
+  // In an individual tournament the name is a person, so it completes from the accounts
+  // the owner may add directly: users who trust them, and every account for a site admin
+  // (`addable-participants`, which only exists for individual tournaments).
+  const swrAddable = getAddableParticipants(isIndividual ? tournament_id : null);
+  const addable: { user_id: number; name: string }[] =
+    swrAddable.data != null ? swrAddable.data.data : [];
+
+  // Picking a suggestion binds that account to the tournament instead of creating a
+  // name-only row. Two accounts sharing a name cannot be told apart in a free-text box,
+  // so such a name binds nothing and falls back to a name-only participant — the
+  // 直接添加参赛者 picker below the table keys on the account itself and still handles it.
+  const userIdByName = new Map<string, number | null>();
+  addable.forEach((participant) => {
+    userIdByName.set(
+      participant.name,
+      userIdByName.has(participant.name) ? null : participant.user_id
+    );
   });
-  return (
-    <form
-      onSubmit={form.onSubmit(async (values) => {
-        await createTeams(tournament_id, values.names, values.active);
-        await swrTeamsResponse.mutate();
-        setOpened(false);
-      })}
-    >
-      <MultiTeamsInput form={form} />
 
-      <Checkbox
-        mt="md"
-        label={t('active_teams_checkbox_label')}
-        {...form.getInputProps('active', { type: 'checkbox' })}
-      />
-      <Button fullWidth style={{ marginTop: 10 }} color="green" type="submit">
-        {t('save_button')}
-      </Button>
-    </form>
-  );
-}
-
-function SingleTeamTab({
-  tournament_id,
-  swrTeamsResponse,
-  setOpened,
-}: {
-  tournament_id: number;
-  swrTeamsResponse: SWRResponse<TeamsWithPlayersResponse>;
-  setOpened: any;
-}) {
-  const { t } = useTranslation();
-  const { data } = getPlayers(tournament_id, false);
-  const players: Player[] = data != null ? data.data.players : [];
   const form = useForm({
     initialValues: {
       name: '',
       active: true,
-      player_ids: [],
+      player_names: [] as string[],
     },
     validate: {
       name: (value) => (value.length > 0 ? null : t('too_short_name_validation')),
     },
   });
+
+  const nameInputProps = {
+    withAsterisk: true,
+    label: t('name_input_label'),
+    placeholder: t('team_name_input_placeholder', { context: teamContext }),
+    ...form.getInputProps('name'),
+  };
+
   return (
     <form
       onSubmit={form.onSubmit(async (values) => {
-        await createTeam(tournament_id, values.name, values.active, values.player_ids);
-        await swrTeamsResponse.mutate();
+        const userId = userIdByName.get(values.name.trim()) ?? null;
+        if (userId != null) {
+          await addParticipant(tournament_id, userId).catch((exc: any) => handleRequestError(exc));
+        } else {
+          await createTeam(tournament_id, values.name, values.active, values.player_names);
+        }
+        await Promise.all([swrTeamsResponse.mutate(), swrAddable.mutate()]);
         setOpened(false);
       })}
     >
-      <TextInput
-        withAsterisk
-        label={t('name_input_label')}
-        placeholder={t('team_name_input_placeholder')}
-        {...form.getInputProps('name')}
-      />
+      {isIndividual ? (
+        <Autocomplete {...nameInputProps} data={addable.map((p) => p.name)} limit={25} />
+      ) : (
+        <TextInput {...nameInputProps} />
+      )}
 
       <Checkbox
         mt="md"
-        label={t('active_teams_checkbox_label')}
+        label={t('active_teams_checkbox_label', { context: teamContext })}
         {...form.getInputProps('active', { type: 'checkbox' })}
       />
 
-      <MultiSelect
-        data={players.map((p) => ({ value: `${p.id}`, label: p.name }))}
-        label={t('team_member_select_title')}
-        maxDropdownHeight={160}
-        searchable
-        mb="12rem"
-        mt={12}
-        limit={25}
-        {...form.getInputProps('player_ids')}
-      />
+      {/* A participant in an individual tournament is one person: it has no members. */}
+      {teamContext == null ? (
+        <TagsInput
+          label={t('team_member_select_title')}
+          placeholder={t('team_member_select_placeholder')}
+          mt={12}
+          {...form.getInputProps('player_names')}
+        />
+      ) : null}
       <Button fullWidth style={{ marginTop: 10 }} color="green" type="submit">
         {t('save_button')}
       </Button>
@@ -121,42 +111,26 @@ export default function TeamCreateModal({
   swrTeamsResponse: SWRResponse<TeamsWithPlayersResponse>;
 }) {
   const { t } = useTranslation();
+  const teamContext = useTeamNamingContext(tournament_id);
   const [opened, setOpened] = useState(false);
   return (
     <>
-      <Modal opened={opened} onClose={() => setOpened(false)} title="Create Team">
-        <Tabs defaultValue="single">
-          <Tabs.List justify="center" grow>
-            <Tabs.Tab value="single" leftSection={<IconUser size="0.8rem" />}>
-              {t('single_team')}
-            </Tabs.Tab>
-            <Tabs.Tab value="multi" leftSection={<IconUsers size="0.8rem" />}>
-              {t('multiple_teams')}
-            </Tabs.Tab>
-          </Tabs.List>
-
-          <Tabs.Panel value="single" pt="xs">
-            <SingleTeamTab
-              swrTeamsResponse={swrTeamsResponse}
-              tournament_id={tournament_id}
-              setOpened={setOpened}
-            />
-          </Tabs.Panel>
-
-          <Tabs.Panel value="multi" pt="xs">
-            <MultiTeamTab
-              swrTeamsResponse={swrTeamsResponse}
-              tournament_id={tournament_id}
-              setOpened={setOpened}
-            />
-          </Tabs.Panel>
-        </Tabs>
+      <Modal
+        opened={opened}
+        onClose={() => setOpened(false)}
+        title={t('create_team_modal_title', { context: teamContext })}
+      >
+        <TeamForm
+          swrTeamsResponse={swrTeamsResponse}
+          tournament_id={tournament_id}
+          setOpened={setOpened}
+        />
       </Modal>
 
       <SaveButton
         onClick={() => setOpened(true)}
         leftSection={<IconUsersPlus size={24} />}
-        title={t('add_team_button')}
+        title={t('add_team_button', { context: teamContext })}
         mb={0}
       />
     </>

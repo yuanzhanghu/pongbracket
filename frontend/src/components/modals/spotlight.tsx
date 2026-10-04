@@ -15,12 +15,14 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
+import { useTeamNamingContext } from '@components/utils/team_naming';
 import { getTournamentIdFromRouter } from '@components/utils/util';
 
 export function BracketSpotlight() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id: tournamentId } = getTournamentIdFromRouter();
+  const teamContext = useTeamNamingContext(tournamentId);
 
   const actions: SpotlightActionData[] = [
     {
@@ -63,16 +65,9 @@ export function BracketSpotlight() {
     },
     {
       id: 'teams',
-      title: t('teams_title'),
-      description: t('teams_spotlight_description'),
+      title: t('teams_title', { context: teamContext }),
+      description: t('teams_spotlight_description', { context: teamContext }),
       onClick: () => navigate(`/tournaments/${tournamentId}/teams`),
-      leftSection: <IconUsers size="1.2rem" />,
-    },
-    {
-      id: 'players',
-      title: t('players_title'),
-      description: t('players_spotlight_description'),
-      onClick: () => navigate(`/tournaments/${tournamentId}/players`),
       leftSection: <IconUsers size="1.2rem" />,
     },
     {
@@ -91,7 +86,7 @@ export function BracketSpotlight() {
     },
     {
       id: 'rankings',
-      title: t('rankings_title'),
+      title: t('scoring_settings_title'),
       description: t('rankings_spotlight_description'),
       onClick: () => navigate(`/tournaments/${tournamentId}/rankings`),
       leftSection: <IconScoreboard size="1.2rem" />,

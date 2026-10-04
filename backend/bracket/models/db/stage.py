@@ -21,5 +21,9 @@ class StageUpdateBody(BaseModelORM):
     name: str
 
 
+class StageCreateBody(BaseModelORM):
+    name: str = "Stage"
+
+
 class StageActivateBody(BaseModelORM):
     direction: Literal["next", "previous"] = "next"

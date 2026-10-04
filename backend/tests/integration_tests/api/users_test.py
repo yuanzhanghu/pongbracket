@@ -29,6 +29,7 @@ async def test_users_endpoint(
             "id": auth_context.user.id,
             "name": "Donald Duck",
             "account_type": UserAccountType.REGULAR.value,
+            "is_admin": False,
         },
     }
 
@@ -89,6 +90,49 @@ async def temporary_user() -> AsyncIterator[tuple[User, dict[str, str]]]:
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_list_users(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    # Non-admins may not list users.
+    response = await send_auth_request(HTTPMethod.GET, "users", auth_context, {})
+    assert "管理员" in response["detail"]
+
+    async with temporary_user() as (user_created, headers):
+        await database.execute(
+            "UPDATE users SET is_admin = true WHERE id = :id", {"id": user_created.id}
+        )
+        category_id = await database.fetch_val(
+            "INSERT INTO rating_categories (key, name, algorithm) "
+            "VALUES ('test-user-list', 'Test', 'chinatt') RETURNING id"
+        )
+        await database.execute(
+            """
+            INSERT INTO player_ratings
+                (category_id, user_id, initial_rating, current_rating, status, last_updated)
+            VALUES (:c, :u, 1500, 1520, 'ACTIVE', NOW())
+            """,
+            {"c": category_id, "u": user_created.id},
+        )
+        try:
+            response = await send_auth_request(
+                HTTPMethod.GET,
+                "users",
+                auth_context.model_copy(update={"user": user_created, "headers": headers}),
+                {},
+            )
+            entries_by_name = {entry["name"]: entry for entry in response["data"]}
+            assert auth_context.user.name in entries_by_name
+            # ACTIVE ratings are returned per category; no emails or other user fields.
+            created_entry = entries_by_name[user_created.name]
+            assert created_entry["ratings"] == {str(category_id): 1520}
+            assert "email" not in created_entry
+        finally:
+            await database.execute(
+                "DELETE FROM rating_categories WHERE id = :i", {"i": category_id}
+            )
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_update_user(
     startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
 ) -> None:
@@ -124,3 +168,28 @@ async def test_update_user_password(
         assert response.get("success") is True, response
         assert updated_user.password_hash and len(updated_user.password_hash) == 60
         assert auth_context.user != updated_user.password_hash
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_user_password_retires_existing_tokens(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    """Tokens are stateless and now live a year, so a password change has to be what
+    logs every device holding an older one out."""
+    async with temporary_user() as (user_created, headers):
+        context = auth_context.model_copy(update={"user": user_created, "headers": headers})
+        assert "data" in await send_auth_request(
+            HTTPMethod.GET, f"users/{user_created.id}", context, {}
+        )
+
+        await send_auth_request(
+            HTTPMethod.PUT,
+            f"users/{user_created.id}/password",
+            context,
+            json={"password": "another password"},
+        )
+
+        # Same token, one generation behind the user now.
+        response = await send_auth_request(HTTPMethod.GET, f"users/{user_created.id}", context, {})
+        assert "data" not in response, response
+        assert "重新登录" in response["detail"]

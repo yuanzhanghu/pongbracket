@@ -26,6 +26,7 @@ from bracket.utils.errors import (
     check_foreign_key_violation,
     check_unique_constraint_violation,
 )
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import StageItemId, StageItemInputId, TournamentId
 
 router = APIRouter(prefix=config.api_prefix)
@@ -39,7 +40,7 @@ async def validate_stage_item_update(
     if stage_item_input_db is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Could not find the stage item input",
+            detail=tr("找不到该阶段项目的输入位"),
         )
 
     if isinstance(stage_item_input_body, StageItemInputUpdateBodyTentative):
@@ -50,7 +51,7 @@ async def validate_stage_item_update(
         if winner_from_stage is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Could not find stage item with id {input_id}",
+                detail=tr("找不到 ID 为 {id} 的阶段项目").format(id=input_id),
             )
 
     if (
@@ -59,7 +60,7 @@ async def validate_stage_item_update(
     ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Could not find team with id {stage_item_input_body.team_id}",
+            detail=tr("找不到 ID 为 {id} 的队伍").format(id=stage_item_input_body.team_id),
         )
 
 

@@ -12,7 +12,7 @@ import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { GoPlus } from '@react-icons/all-files/go/GoPlus';
 import { IconCalendar, IconCalendarTime } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SWRResponse } from 'swr';
 
@@ -20,15 +20,17 @@ import SaveButton from '@components/buttons/save';
 import { assert_not_none } from '@components/utils/assert';
 import { Club, Tournament, TournamentsResponse } from '@openapi';
 import { getBaseApiUrl, getClubs } from '@services/adapter';
+import { getRatingCategories } from '@services/rating';
 import { createTournament } from '@services/tournament';
 import dayjs from 'dayjs';
 
 export function TournamentLogo({ tournament }: { tournament: Tournament | null }) {
+  const { t } = useTranslation();
   if (tournament == null || tournament.logo_path == null) return null;
   return (
     <Image
       radius="md"
-      alt="Logo of the tournament"
+      alt={t('tournament_logo_alt')}
       src={`${getBaseApiUrl()}/static/tournament-logos/${tournament.logo_path}`}
     />
   );
@@ -44,17 +46,20 @@ function GeneralTournamentForm({
   clubs: Club[];
 }) {
   const { t } = useTranslation();
+  const ratingCategories = getRatingCategories().data?.data ?? [];
   const form = useForm({
     initialValues: {
       start_time: dayjs(),
       name: '',
       club_id: null,
       dashboard_public: true,
-      dashboard_endpoint: '',
       players_can_be_in_multiple_teams: false,
       auto_assign_courts: true,
       duration_minutes: 10,
       margin_minutes: 5,
+      is_individual: true,
+      rated: false,
+      rating_category_id: null as string | null,
     },
 
     validate: {
@@ -68,19 +73,35 @@ function GeneralTournamentForm({
     },
   });
 
+  // Clubs are implicit: a tournament is always created under the user's own
+  // (hidden) personal club, so the club is auto-selected and never shown.
+  useEffect(() => {
+    if (clubs.length > 0 && form.values.club_id == null) {
+      form.setFieldValue('club_id', `${clubs[0].id}` as any);
+    }
+  }, [clubs]);
+
   return (
     <form
       onSubmit={form.onSubmit(async (values) => {
+        // Only individual tournaments may be rated; settings are fixed at creation.
+        const ratingCategoryId =
+          values.is_individual && values.rated
+            ? values.rating_category_id != null
+              ? parseInt(values.rating_category_id, 10)
+              : (ratingCategories[0]?.id ?? null)
+            : null;
         await createTournament(
           parseInt(assert_not_none(values.club_id as unknown as string), 10),
           values.name,
           values.dashboard_public,
-          values.dashboard_endpoint,
           values.players_can_be_in_multiple_teams,
           values.auto_assign_courts,
           values.start_time,
           values.duration_minutes,
-          values.margin_minutes
+          values.margin_minutes,
+          values.is_individual,
+          ratingCategoryId
         );
         await swrTournamentsResponse.mutate();
         setOpened(false);
@@ -93,23 +114,6 @@ function GeneralTournamentForm({
         {...form.getInputProps('name')}
       />
 
-      <Select
-        withAsterisk
-        data={clubs.map((p) => ({ value: `${p.id}`, label: p.name }))}
-        label={t('club_select_label')}
-        placeholder={t('club_select_placeholder')}
-        searchable
-        limit={20}
-        style={{ marginTop: 10 }}
-        {...form.getInputProps('club_id')}
-      />
-
-      <TextInput
-        label={t('dashboard_link_label')}
-        placeholder={t('dashboard_link_placeholder')}
-        mt="lg"
-        {...form.getInputProps('dashboard_endpoint')}
-      />
       <Grid mt="1rem">
         <Grid.Col span={{ sm: 9 }}>
           <DateTimePicker
@@ -151,14 +155,59 @@ function GeneralTournamentForm({
 
       <Checkbox
         mt="md"
+        label={t('individual_tournament_checkbox_label')}
+        description={t('individual_tournament_checkbox_description')}
+        {...form.getInputProps('is_individual', { type: 'checkbox' })}
+        onChange={(event) => {
+          const checked = event.currentTarget.checked;
+          form.setFieldValue('is_individual', checked);
+          if (checked) {
+            form.setFieldValue('players_can_be_in_multiple_teams', false);
+          } else {
+            form.setFieldValue('rated', false);
+            form.setFieldValue('rating_category_id', null);
+          }
+        }}
+      />
+      {form.values.is_individual && (
+        <Checkbox
+          mt="md"
+          label={t('rated_checkbox_label')}
+          description={t('rated_checkbox_description')}
+          {...form.getInputProps('rated', { type: 'checkbox' })}
+          onChange={(event) => {
+            const checked = event.currentTarget.checked;
+            form.setFieldValue('rated', checked);
+            form.setFieldValue(
+              'rating_category_id',
+              checked && ratingCategories[0] != null ? `${ratingCategories[0].id}` : null
+            );
+          }}
+        />
+      )}
+      {form.values.is_individual && form.values.rated && (
+        <Select
+          mt="md"
+          label={t('rating_category_label')}
+          data={ratingCategories.map((c) => ({ value: `${c.id}`, label: c.name }))}
+          {...form.getInputProps('rating_category_id')}
+        />
+      )}
+
+      <Checkbox
+        mt="md"
         label={t('dashboard_public_description')}
         {...form.getInputProps('dashboard_public', { type: 'checkbox' })}
       />
-      <Checkbox
-        mt="md"
-        label={t('miscellaneous_label')}
-        {...form.getInputProps('players_can_be_in_multiple_teams', { type: 'checkbox' })}
-      />
+      {/* Team members are a team-tournament concept; an individual participant is
+          one person, so the setting has nothing to apply to. */}
+      {!form.values.is_individual && (
+        <Checkbox
+          mt="md"
+          label={t('miscellaneous_label')}
+          {...form.getInputProps('players_can_be_in_multiple_teams', { type: 'checkbox' })}
+        />
+      )}
       <Checkbox
         mt="md"
         label={t('auto_assign_courts_label')}

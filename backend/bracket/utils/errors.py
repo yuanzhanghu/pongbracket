@@ -6,6 +6,7 @@ import asyncpg  # type: ignore[import-untyped]
 from fastapi import HTTPException
 from starlette import status
 
+from bracket.utils.i18n import tr
 from bracket.utils.types import EnumAutoStr
 
 
@@ -14,6 +15,13 @@ class UniqueIndex(EnumAutoStr):
     ix_users_email = auto()
     stage_item_inputs_stage_item_id_team_id_key = auto()
     stage_item_inputs_stage_item_id_winner_from_stage_item_id_w_key = auto()
+    rating_categories_key_key = auto()
+    player_ratings_category_id_user_id_key = auto()
+    teams_x_users_team_id_key = auto()
+    teams_x_users_tournament_id_user_id_key = auto()
+    tournament_scorers_tournament_id_user_id_key = auto()
+    user_trusted_managers_user_id_manager_id_key = auto()
+    tournament_favorites_user_id_tournament_id_key = auto()
 
 
 class ForeignKey(EnumAutoStr):
@@ -26,32 +34,38 @@ class ForeignKey(EnumAutoStr):
     teams_tournament_id_fkey = auto()
     tournaments_club_id_fkey = auto()
     rankings_tournament_id_fkey = auto()
+    stage_items_ranking_id_fkey = auto()
 
 
+# The Chinese strings below are message ids: they are looked up at raise time (not at
+# import time) so the message follows the language of the request that hit the violation.
 unique_index_violation_error_lookup = {
-    UniqueIndex.ix_tournaments_dashboard_endpoint: "This dashboard link is already taken",
-    UniqueIndex.ix_users_email: "This email is already taken",
-    UniqueIndex.stage_item_inputs_stage_item_id_team_id_key: (
-        "This team is already assigned to another stage item"
-    ),
+    UniqueIndex.ix_tournaments_dashboard_endpoint: "该仪表板链接已被占用",
+    UniqueIndex.ix_users_email: "该邮箱已被使用",
+    UniqueIndex.stage_item_inputs_stage_item_id_team_id_key: ("该队伍已被分配到其他阶段项目"),
     UniqueIndex.stage_item_inputs_stage_item_id_winner_from_stage_item_id_w_key: (
-        "This stage item winner is already assigned to another stage item"
+        "该晋级位已被分配到其他阶段项目"
     ),
+    UniqueIndex.rating_categories_key_key: "已存在相同标识的积分类别",
+    UniqueIndex.player_ratings_category_id_user_id_key: ("该账号在此积分类别中已有积分"),
+    UniqueIndex.teams_x_users_team_id_key: "该队伍已绑定其他账号",
+    UniqueIndex.teams_x_users_tournament_id_user_id_key: ("该账号在本比赛中已有队伍"),
+    UniqueIndex.tournament_scorers_tournament_id_user_id_key: ("该账号已是本比赛的记分员"),
+    UniqueIndex.user_trusted_managers_user_id_manager_id_key: ("该成员已在你的信任列表中"),
+    UniqueIndex.tournament_favorites_user_id_tournament_id_key: ("你已关注该比赛"),
 }
 
 
 foreign_key_violation_error_lookup = {
-    ForeignKey.courts_tournament_id_fkey: "This tournament still has courts, delete those first",
-    ForeignKey.matches_stage_item_input1_id_fkey: "This team is still part of matches",
-    ForeignKey.matches_stage_item_input2_id_fkey: "This team is still part of matches",
-    ForeignKey.players_tournament_id_fkey: "This tournament still has players, delete those first",
-    ForeignKey.stage_item_inputs_team_id_fkey: "Invalid team as input to this stage item",
-    ForeignKey.stages_tournament_id_fkey: "This tournament still has stages, delete those first",
-    ForeignKey.teams_tournament_id_fkey: "This tournament still has teams, delete those first",
-    ForeignKey.tournaments_club_id_fkey: "This club still has tournaments, delete those first",
-    ForeignKey.rankings_tournament_id_fkey: (
-        "This tournament still has rankings, delete those first"
-    ),
+    ForeignKey.courts_tournament_id_fkey: "该比赛还有场地，请先删除场地",
+    ForeignKey.matches_stage_item_input1_id_fkey: "该队伍仍关联着比赛对阵",
+    ForeignKey.matches_stage_item_input2_id_fkey: "该队伍仍关联着比赛对阵",
+    ForeignKey.stage_item_inputs_team_id_fkey: "该队伍不能作为此阶段项目的输入",
+    ForeignKey.stages_tournament_id_fkey: "该比赛还有阶段，请先删除阶段",
+    ForeignKey.teams_tournament_id_fkey: "该比赛还有队伍，请先删除队伍",
+    ForeignKey.tournaments_club_id_fkey: "该俱乐部下还有比赛，请先删除比赛",
+    ForeignKey.rankings_tournament_id_fkey: ("该比赛还有排名设置，请先删除排名"),
+    ForeignKey.stage_items_ranking_id_fkey: ("该比赛还有阶段，请先删除阶段"),
 }
 
 
@@ -73,7 +87,7 @@ def check_unique_constraint_violation(expected_violations: set[UniqueIndex]) -> 
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=unique_index_violation_error_lookup[constraint],
+            detail=tr(unique_index_violation_error_lookup[constraint]),
         ) from exc
 
 
@@ -97,5 +111,5 @@ def check_foreign_key_violation(expected_violations: set[ForeignKey]) -> Iterato
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=foreign_key_violation_error_lookup[constraint],
+            detail=tr(foreign_key_violation_error_lookup[constraint]),
         ) from exc

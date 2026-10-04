@@ -31,7 +31,7 @@ export default function CreateStageButton({
       size="xs"
       style={{ marginRight: 10 }}
       onClick={async () => {
-        await createStage(tournament.id);
+        await createStage(tournament.id, t('stage_default_name'));
         await swrStagesResponse.mutate();
         await swrAvailableInputsResponse.mutate();
         await swrRankingsPerStageItemResponse.mutate();
@@ -59,7 +59,7 @@ export function CreateStageButtonLarge({
       size="lg"
       style={{ marginRight: 10 }}
       onClick={async () => {
-        await createStage(tournament.id);
+        await createStage(tournament.id, t('stage_default_name'));
         await swrStagesResponse.mutate();
       }}
       leftSection={<GoPlus size={24} />}

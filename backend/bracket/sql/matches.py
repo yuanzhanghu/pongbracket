@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from heliclockter import datetime_utc
@@ -53,6 +54,7 @@ async def sql_create_match(match: MatchCreateBody) -> Match:
             stage_item_input2_score,
             stage_item_input1_conflict,
             stage_item_input2_conflict,
+            best_of,
             created
         )
         VALUES (
@@ -70,6 +72,7 @@ async def sql_create_match(match: MatchCreateBody) -> Match:
             0,
             false,
             false,
+            :best_of,
             NOW()
         )
         RETURNING *
@@ -92,7 +95,10 @@ async def sql_update_match(match_id: MatchId, match: MatchBody, tournament: Tour
             custom_duration_minutes = :custom_duration_minutes,
             custom_margin_minutes = :custom_margin_minutes,
             duration_minutes = :duration_minutes,
-            margin_minutes = :margin_minutes
+            margin_minutes = :margin_minutes,
+            games = :games,
+            best_of = :best_of,
+            forfeit_input = :forfeit_input
         WHERE matches.id = :match_id
         RETURNING *
         """
@@ -107,6 +113,24 @@ async def sql_update_match(match_id: MatchId, match: MatchBody, tournament: Tour
         if match.custom_margin_minutes is not None
         else tournament.margin_minutes
     )
+
+    # When per-game scores are given, the match score is the number of games won by each side.
+    score1 = match.stage_item_input1_score
+    score2 = match.stage_item_input2_score
+    games_json = None
+    if match.games is not None:
+        score1 = sum(1 for g in match.games if len(g) == 2 and g[0] > g[1])
+        score2 = sum(1 for g in match.games if len(g) == 2 and g[1] > g[0])
+        games_json = json.dumps(match.games)
+
+    # A forfeit leaves the winner's games (局分) and points (小分) untouched: the match
+    # score stays 0-0 and no per-game scores are stored. The win is awarded purely from
+    # the forfeit marker in the ranking calculation.
+    if match.forfeit_input is not None:
+        score1 = 0
+        score2 = 0
+        games_json = None
+
     await database.execute(
         query=query,
         values={
@@ -114,6 +138,9 @@ async def sql_update_match(match_id: MatchId, match: MatchBody, tournament: Tour
             **match.model_dump(),
             "duration_minutes": duration_minutes,
             "margin_minutes": margin_minutes,
+            "stage_item_input1_score": score1,
+            "stage_item_input2_score": score2,
+            "games": games_json,
         },
     )
 
@@ -226,13 +253,28 @@ async def sql_get_match(match_id: MatchId) -> Match:
     return Match.model_validate(dict(result._mapping))
 
 
+async def sql_set_match_score(match_id: MatchId, score1: int, score2: int) -> None:
+    query = """
+        UPDATE matches
+        SET stage_item_input1_score = :score1,
+            stage_item_input2_score = :score2,
+            games = NULL
+        WHERE matches.id = :match_id
+        """
+    await database.execute(
+        query=query,
+        values={"match_id": match_id, "score1": score1, "score2": score2},
+    )
+
+
 async def clear_scores_for_matches_in_stage_item(
     tournament_id: TournamentId, stage_item_id: StageItemId
 ) -> None:
     query = """
         UPDATE matches
         SET stage_item_input1_score = 0,
-            stage_item_input2_score = 0
+            stage_item_input2_score = 0,
+            games = NULL
         FROM rounds
         JOIN stage_items ON rounds.stage_item_id = stage_items.id
         JOIN stages ON stages.id = stage_items.stage_id

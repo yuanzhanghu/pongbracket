@@ -61,7 +61,10 @@ export function tableStateToPagination(tableState: TableState) {
 }
 
 export function sortTableEntries(r1: any, r2: any, tableState: TableState) {
-  const order = r1[tableState.sortField] > r2[tableState.sortField];
+  const a = r1[tableState.sortField];
+  const b = r2[tableState.sortField];
+  if (a === b) return 0;
+  const order = a > b;
   return (tableState.reversed ? order : !order) ? 1 : -1;
 }
 
@@ -91,12 +94,14 @@ export function ThSortable({ children, field, visibleFrom, state }: ThProps) {
 export function ThNotSortable({
   children,
   visibleFrom,
+  w,
 }: {
   children: React.ReactNode;
   visibleFrom?: string;
+  w?: number | string;
 }) {
   return (
-    <Table.Th className={classes.th} visibleFrom={visibleFrom}>
+    <Table.Th className={classes.th} visibleFrom={visibleFrom} w={w}>
       <Group justify="apart" ml="20px">
         <Text fw={800} inherit>
           {children}
@@ -109,7 +114,9 @@ export function ThNotSortable({
 export default function TableLayout(props: any) {
   return (
     <>
-      <ScrollArea>
+      {/* type="auto": keep the horizontal scrollbar visible whenever the table
+          overflows (the default only shows it while hovering). */}
+      <ScrollArea type="auto" offsetScrollbars>
         <Table
           horizontalSpacing="md"
           verticalSpacing="xs"

@@ -6,11 +6,17 @@ from bracket.database import database
 from bracket.logic.scheduling.builder import determine_available_inputs
 from bracket.logic.scheduling.handle_stage_activation import (
     get_updates_to_inputs_in_activated_stage,
+    resolve_byes_in_activated_stage,
     update_matches_in_activated_stage,
     update_matches_in_deactivated_stage,
 )
 from bracket.logic.subscriptions import check_requirement
-from bracket.models.db.stage import Stage, StageActivateBody, StageUpdateBody
+from bracket.models.db.stage import (
+    Stage,
+    StageActivateBody,
+    StageCreateBody,
+    StageUpdateBody,
+)
 from bracket.models.db.tournament import Tournament
 from bracket.models.db.user import UserPublic
 from bracket.models.db.util import StageWithStageItems
@@ -33,6 +39,7 @@ from bracket.sql.stages import (
     sql_delete_stage,
 )
 from bracket.sql.teams import get_teams_with_members
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import StageId, TournamentId
 
 router = APIRouter(prefix=config.api_prefix)
@@ -44,13 +51,16 @@ async def get_stages(
     user: UserPublic = Depends(user_authenticated_or_public_dashboard),
     no_draft_rounds: bool = False,
 ) -> StagesWithStageItemsResponse:
-    if no_draft_rounds is False and user is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Can't view draft rounds when not authorized",
-        )
+    # Public dashboard viewers (anonymous, or a logged-in non-member) resolve to
+    # user=None here. They may read the tournament but must not see unpublished
+    # draft rounds — so instead of rejecting them, transparently hide draft
+    # rounds. This keeps the public dashboard (and its 申请参赛 join button)
+    # viewable by prospective participants.
+    effective_no_draft_rounds = no_draft_rounds or user is None
 
-    stages_ = await get_full_tournament_details(tournament_id, no_draft_rounds=no_draft_rounds)
+    stages_ = await get_full_tournament_details(
+        tournament_id, no_draft_rounds=effective_no_draft_rounds
+    )
     return StagesWithStageItemsResponse(data=stages_)
 
 
@@ -65,13 +75,13 @@ async def delete_stage(
     if len(stage.stage_items) > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Stage contains stage items, please delete those first",
+            detail=tr("该阶段还有阶段项目，请先删除"),
         )
 
     if stage.is_active and len(stage.stage_items) > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Stage is active, please activate another stage first",
+            detail=tr("该阶段处于激活状态，请先激活其他阶段"),
         )
 
     await sql_delete_stage(tournament_id, stage_id)
@@ -82,13 +92,15 @@ async def delete_stage(
 @router.post("/tournaments/{tournament_id}/stages", response_model=SuccessResponse)
 async def create_stage(
     tournament_id: TournamentId,
+    stage_body: StageCreateBody = StageCreateBody(),
     user: UserPublic = Depends(user_authenticated_for_tournament),
     _: Tournament = Depends(disallow_archived_tournament),
 ) -> SuccessResponse:
     existing_stages = await get_full_tournament_details(tournament_id)
     check_requirement(existing_stages, user, "max_stages")
 
-    await sql_create_stage(tournament_id)
+    name = f"{stage_body.name} {len(existing_stages) + 1}"
+    await sql_create_stage(tournament_id, name)
     return SuccessResponse()
 
 
@@ -126,7 +138,9 @@ async def activate_next_stage(
     if new_active_stage_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"There is no {stage_body.direction} stage",
+            detail=(
+                tr("没有下一个阶段") if stage_body.direction == "next" else tr("没有上一个阶段")
+            ),
         )
 
     stages = await get_full_tournament_details(tournament_id)
@@ -134,6 +148,7 @@ async def activate_next_stage(
 
     if stage_body.direction == "next":
         await update_matches_in_activated_stage(tournament_id, new_active_stage_id)
+        await resolve_byes_in_activated_stage(tournament_id, new_active_stage_id)
     else:
         if deactivated_stage:
             await update_matches_in_deactivated_stage(tournament_id, deactivated_stage)

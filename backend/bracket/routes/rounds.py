@@ -33,6 +33,7 @@ from bracket.sql.rounds import (
 from bracket.sql.stage_items import get_stage_item
 from bracket.sql.stages import get_full_tournament_details
 from bracket.sql.validation import check_foreign_keys_belong_to_tournament
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import RoundId, TournamentId
 from tests.integration_tests.mocks import MOCK_NOW
 
@@ -80,7 +81,7 @@ async def create_round(
     if not stage_item.type.supports_dynamic_number_of_rounds:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Stage type {stage_item.type} doesn't support manual creation of rounds",
+            detail=tr("阶段类型 {type} 不支持手动创建回合").format(type=stage_item.type),
         )
 
     round_id = await sql_create_round(

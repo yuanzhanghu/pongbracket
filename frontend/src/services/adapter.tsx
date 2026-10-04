@@ -3,33 +3,30 @@ import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import { useNavigate } from 'react-router';
 import useSWR, { SWRResponse } from 'swr';
 
-import { SchedulerSettings } from '@components/utils/match';
 import { TournamentFilter } from '@components/utils/tournament';
 import { Pagination } from '@components/utils/util';
 import {
   ClubsResponse,
   CourtsResponse,
-  PlayersResponse,
   RankingsResponse,
-  RoundWithMatches,
   StageItemInputOptionsResponse,
   StageRankingResponse,
   StagesWithStageItemsResponse,
   TeamsWithPlayersResponse,
   TournamentResponse,
   TournamentsResponse,
-  UpcomingMatchesResponse,
   UserPublicResponse,
 } from '@openapi';
 import dayjs from 'dayjs';
+import i18n from '../../i18n';
 import { getLogin, performLogout, tokenPresent } from './local_storage';
 
 export function handleRequestError(response: AxiosError) {
   if (response.code === 'ERR_NETWORK') {
     showNotification({
       color: 'red',
-      title: 'An error occurred',
-      message: 'Internal server error',
+      title: i18n.t('operation_failed_title'),
+      message: i18n.t('server_error_message'),
       autoClose: 10000,
     });
     return;
@@ -51,7 +48,7 @@ export function handleRequestError(response: AxiosError) {
 
     showNotification({
       color: 'red',
-      title: 'An error occurred',
+      title: i18n.t('operation_failed_title'),
       message,
       autoClose: 10000,
     });
@@ -77,6 +74,7 @@ export function createAxios() {
     headers: {
       Authorization: `bearer ${access_token}`,
       Accept: 'application/json',
+      'Accept-Language': i18n.resolvedLanguage ?? i18n.language,
     },
   });
 }
@@ -124,32 +122,20 @@ export function getTournamentByEndpointName(
   return useSWR(`tournaments?endpoint_name=${tournament_endpoint_name}`, fetcher);
 }
 
-export function getTournamentById(tournament_id: number): SWRResponse<TournamentResponse> {
-  return useSWR(`tournaments/${tournament_id}`, fetcher);
+export function getTournamentById(tournament_id: number | null): SWRResponse<TournamentResponse> {
+  return useSWR(tournament_id == null ? null : `tournaments/${tournament_id}`, fetcher);
 }
 
 export function getTournaments(filter: TournamentFilter): SWRResponse<TournamentsResponse> {
   return useSWR(`tournaments?filter_=${filter}`, fetcher);
 }
 
-export function getPlayers(
-  tournament_id: number,
-  not_in_team: boolean = false
-): SWRResponse<PlayersResponse> {
-  return useSWR(
-    `tournaments/${tournament_id}/players?not_in_team=${not_in_team}&limit=100`,
-    fetcher
-  );
+export function getFollowedTournaments(): SWRResponse<TournamentsResponse> {
+  return useSWR('me/tournaments', fetcher);
 }
 
-export function getPlayersPaginated(
-  tournament_id: number,
-  pagination: Pagination
-): SWRResponse<PlayersResponse> {
-  return useSWR(
-    `tournaments/${tournament_id}/players?limit=${pagination.limit}&offset=${pagination.offset}&sort_by=${pagination.sort_by}&sort_direction=${pagination.sort_direction}`,
-    fetcher
-  );
+export function getJoinableTournaments(): SWRResponse<TournamentsResponse> {
+  return useSWR('me/joinable-tournaments', fetcher);
 }
 
 export function getTeams(tournament_id: number | undefined): SWRResponse<TeamsWithPlayersResponse> {
@@ -225,20 +211,6 @@ export function getCourtsLive(tournament_id: number | null): SWRResponse<CourtsR
 
 export function getUser(): SWRResponse<UserPublicResponse> {
   return useSWR('users/me', fetcher);
-}
-
-export function getUpcomingMatches(
-  tournament_id: number,
-  stage_item_id: number,
-  draftRound: RoundWithMatches | null,
-  schedulerSettings: SchedulerSettings
-): SWRResponse<UpcomingMatchesResponse> {
-  return useSWR(
-    stage_item_id == null || draftRound == null
-      ? null
-      : `tournaments/${tournament_id}/stage_items/${stage_item_id}/upcoming_matches?elo_diff_threshold=${schedulerSettings.eloThreshold}&only_recommended=${schedulerSettings.onlyRecommended}&limit=${schedulerSettings.limit}&iterations=${schedulerSettings.iterations}`,
-    fetcher
-  );
 }
 
 export async function uploadTournamentLogo(tournament_id: number, file: any) {

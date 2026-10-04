@@ -1,0 +1,93 @@
+/* Single-elimination bracket with connector lines.
+   Each round is an equal-height column; its matches are grouped into pairs, and each pair
+   feeds one match in the next round that sits at the pair's vertical centre. Connectors are
+   drawn with pseudo-elements inside each round's horizontal padding (--run): two horizontal
+   stubs from the match centres and a vertical line joining them. */
+
+.bracket {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+
+/* On phones a wide bracket is trapped in this scroll box, so the page fits the screen and
+   there's nothing to pinch-zoom-out to. Let it overflow the page instead, so native zoom
+   can shrink the whole bracket to fit. Desktop keeps the contained horizontal scroll.
+   (The results/standings tabs fit the screen, so they're untouched and need no zoom.) */
+@media (max-width: 48em) {
+  .bracket {
+    overflow-x: visible;
+  }
+}
+
+.round {
+  --run: 1.5rem; /* horizontal length of each connector elbow */
+  --line: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
+  display: flex;
+  flex-direction: column;
+  min-width: 16rem;
+  padding-inline: var(--run);
+}
+
+.title {
+  text-align: center;
+}
+
+.matches {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.pair {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+/* Match cells stack from the top by default (match.module.css); inside a bracket slot we
+   centre them instead so they line up with the connectors. */
+.slot > div {
+  margin-top: 0;
+}
+
+/* Right stub: from each match centre out to the round's right edge. */
+.round:not(:last-child) .slot::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: calc(var(--run) * -1);
+  width: var(--run);
+  border-top: 2px solid var(--line);
+}
+
+/* Vertical line joining a pair's two match centres (25%..75% of the pair). */
+.round:not(:last-child) .pair::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: calc(var(--run) * -1);
+  border-right: 2px solid var(--line);
+}
+
+/* Left stub: from the round's left edge in to each match centre (every round but the first). */
+.round:not(:first-child) .slot::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: calc(var(--run) * -1);
+  width: var(--run);
+  border-top: 2px solid var(--line);
+}

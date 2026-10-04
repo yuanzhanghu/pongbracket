@@ -2,24 +2,18 @@ import {
   ActionIcon,
   Badge,
   Card,
-  CheckIcon,
-  Combobox,
   Group,
-  InputBase,
   Menu,
+  NativeSelect,
   Stack,
   Text,
   Tooltip,
-  useCombobox,
   useMantineTheme,
 } from '@mantine/core';
-import { useColorScheme } from '@mantine/hooks';
 import { AiFillWarning } from '@react-icons/all-files/ai/AiFillWarning';
-import { BiCheck } from '@react-icons/all-files/bi/BiCheck';
-import { IconDots, IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconDots, IconPencil, IconTournament, IconTrash } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BiSolidWrench } from 'react-icons/bi';
 import { SWRResponse } from 'swr';
 
 import CreateStageButton from '@components/buttons/create_stage';
@@ -67,96 +61,52 @@ function StageItemInputComboBox({
   swrStagesResponse: SWRResponse<StagesWithStageItemsResponse>;
 }) {
   const { t } = useTranslation();
-  const [selectedInput, setSelectedInput] = useState<StageItemInputChoice | null>(
-    availableInputs.find((o) => o.value === current_key) || null
-  );
-  const [successIcon, setSuccessIcon] = useState<boolean>(false);
-  const [search, setSearch] = useState('');
-  const combobox = useCombobox({
-    onDropdownClose: () => {
-      combobox.resetSelectedOption();
-      combobox.focusTarget();
-      setSearch('');
-    },
-
-    onDropdownOpen: () => {
-      combobox.focusSearchInput();
-    },
-  });
-
-  const options = availableInputs
-    .filter((option: StageItemInputChoice) => !option.already_taken)
-    .filter((item) => (item.label || 'None').toLowerCase().includes(search.toLowerCase().trim()))
-    .map((option: StageItemInputChoice, i: number) => (
-      <Combobox.Option key={i} value={option.value}>
-        <Group gap="xs" justify="space-between">
-          {option.label || <i>None</i>}
-          {option.value === selectedInput?.value && <CheckIcon size={12} />}
-        </Group>
-      </Combobox.Option>
-    ));
-
   const theme = useMantineTheme();
-  const dropdownBorderColor = useColorScheme() === 'dark' ? '#444' : '#ccc';
 
+  // Once the stage is activated and a team has been resolved for this slot, show the
+  // actual team name instead of the seed placeholder (e.g. "1st of zu1").
+  const resolvedTeamName = (stageItemInput as { team?: { name?: string } })?.team?.name ?? null;
+
+  // Options for this slot. Keep the currently-selected one even if it's flagged as taken.
+  const data = availableInputs
+    .filter((option) => !option.already_taken || option.value === current_key)
+    .map((option) => ({
+      value: option.value,
+      label:
+        option.value === current_key && resolvedTeamName
+          ? resolvedTeamName
+          : option.label || t('empty_slot'),
+    }));
+
+  const onChange = (value: string | null) => {
+    const option = availableInputs.find((o) => o.value === value) || null;
+    updateStageItemInput(
+      tournament.id,
+      stageItemInput.stage_item_id,
+      stageItemInput.id,
+      option?.team_id || null,
+      option?.winner_position || null,
+      option?.winner_from_stage_item_id || null
+    ).then(() => {
+      swrAvailableInputsResponse.mutate();
+      swrStagesResponse.mutate();
+      swrRankingsPerStageItemResponse.mutate();
+    });
+  };
+
+  // Use a native <select>: the browser/OS renders the picker, so it works reliably on
+  // every device (no floating dropdown that can mis-position or get hidden on mobile),
+  // and behaves identically on desktop and mobile.
   return (
-    <Combobox
-      shadow="lg"
-      store={combobox}
-      onOptionSubmit={(val) => {
-        const option = availableInputs.find((o) => o.value === val) || null;
-        setSelectedInput(option);
-        updateStageItemInput(
-          tournament.id,
-          stageItemInput.stage_item_id,
-          stageItemInput.id,
-          option?.team_id || null,
-          option?.winner_position || null,
-          option?.winner_from_stage_item_id || null
-        ).then(() => {
-          swrAvailableInputsResponse.mutate();
-          swrStagesResponse.mutate();
-          swrRankingsPerStageItemResponse.mutate();
-
-          setSuccessIcon(true);
-
-          setTimeout(() => {
-            setSuccessIcon(false);
-          }, 1500);
-        });
-        combobox.closeDropdown();
-      }}
-    >
-      <Combobox.Target>
-        <InputBase
-          radius="0.5rem"
-          component="button"
-          type="button"
-          rightSection={successIcon ? <BiCheck size={18} color={theme.colors.green[4]} /> : null}
-          pointer
-          rightSectionPointerEvents="none"
-          onClick={() => combobox.toggleDropdown()}
-        >
-          {selectedInput?.label ? (
-            selectedInput?.label
-          ) : (
-            <Group gap="xs">
-              <AiFillWarning size={18} color={theme.colors.orange[4]} />
-              <b>{selectedInput?.label || t('empty_slot').toUpperCase()}</b>
-            </Group>
-          )}
-        </InputBase>
-      </Combobox.Target>
-
-      <Combobox.Dropdown style={{ border: `solid 0.1rem ${dropdownBorderColor}` }}>
-        <Combobox.Search
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          placeholder={t('search_placeholder')}
-        />
-        <Combobox.Options>{options}</Combobox.Options>
-      </Combobox.Dropdown>
-    </Combobox>
+    <NativeSelect
+      radius="0.5rem"
+      data={data}
+      value={current_key ?? 'null'}
+      onChange={(event) => onChange(event.currentTarget.value)}
+      leftSection={
+        current_key == null ? <AiFillWarning size={18} color={theme.colors.orange[4]} /> : undefined
+      }
+    />
   );
 }
 
@@ -298,15 +248,15 @@ function StageItemRow({
             rankings={rankings}
           />
           <Group gap="0rem">
-            {stageItem.type === 'SWISS' ? (
-              <Tooltip label={t('handle_swiss_system')}>
+            {stageItem.type === 'SINGLE_ELIMINATION' ? (
+              <Tooltip label={t('view_bracket_button')}>
                 <ActionIcon
                   variant="transparent"
                   color="gray"
                   component={PreloadLink}
-                  href={`/tournaments/${tournament.id}/stages/swiss/${stageItem.id}`}
+                  href={`/tournaments/${tournament.id}/stages/bracket/${stageItem.id}`}
                 >
-                  <BiSolidWrench size="1.25rem" />
+                  <IconTournament size="1.25rem" />
                 </ActionIcon>
               </Tooltip>
             ) : null}
@@ -326,15 +276,6 @@ function StageItemRow({
                 >
                   {t('edit_stage_item_label')}
                 </Menu.Item>
-                {stageItem.type === 'SWISS' ? (
-                  <Menu.Item
-                    leftSection={<BiSolidWrench size="1.5rem" />}
-                    component={PreloadLink}
-                    href={`/tournaments/${tournament.id}/stages/swiss/${stageItem.id}`}
-                  >
-                    {t('handle_swiss_system')}
-                  </Menu.Item>
-                ) : null}
                 <Menu.Item
                   leftSection={<IconTrash size="1.5rem" />}
                   onClick={async () => {
@@ -418,7 +359,7 @@ function StageColumn({
       />
       <Group justify="space-between">
         <Group>
-          {stage.name}
+          {`${t('stage_name_prefix')}${stage.name}`}
           {stage.is_active ? <Badge color="green">{t('active_badge_label')}</Badge> : null}
         </Group>
         <Menu withinPortal position="bottom-end" shadow="sm">

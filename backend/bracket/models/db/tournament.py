@@ -4,7 +4,7 @@ from heliclockter import datetime_utc
 from pydantic import Field
 
 from bracket.models.db.shared import BaseModelORM
-from bracket.utils.id_types import ClubId, TournamentId
+from bracket.utils.id_types import ClubId, RatingCategoryId, TournamentId
 from bracket.utils.pydantic import EmptyStrToNone
 from bracket.utils.types import EnumAutoStr
 
@@ -31,6 +31,11 @@ class TournamentInsertable(BaseModelORM):
 
 class Tournament(TournamentInsertable):
     id: TournamentId
+    is_individual: bool = False
+    rating_category_id: RatingCategoryId | None = None
+    settled_seq: int | None = None
+    settled_at: datetime_utc | None = None
+    settlement_requested_at: datetime_utc | None = None
 
 
 class TournamentUpdateBody(BaseModelORM):
@@ -50,3 +55,6 @@ class TournamentChangeStatusBody(BaseModelORM):
 
 class TournamentBody(TournamentUpdateBody):
     club_id: ClubId
+    # Rating settings are fixed at creation time and immutable afterwards.
+    is_individual: bool = False
+    rating_category_id: RatingCategoryId | None = None

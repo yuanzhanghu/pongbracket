@@ -17,12 +17,11 @@ export function EmptyTableInfo({
   return (
     <Alert
       icon={<IconAlertCircle size={16} />}
-      title={`No ${entity_name} found`}
+      title={t('no_entity_found_title', { entity: entity_name })}
       color="blue"
       radius="lg"
       mt={8}
     >
-      {t('could_not_find_any_alert')} {entity_name}
       {message}
     </Alert>
   );

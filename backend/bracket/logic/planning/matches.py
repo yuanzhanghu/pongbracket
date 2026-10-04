@@ -29,40 +29,51 @@ async def schedule_all_unscheduled_matches(
     if len(stages) < 1 or len(courts) < 1:
         return
 
-    time_last_match_from_previous_stage = tournament.start_time
-    position_last_match_from_previous_stage = 0
+    position_in_schedule = 0
 
     for stage in stages:
         stage_items = sorted(stage.stage_items, key=lambda x: x.name)
+        rounds_per_item = [
+            sorted(stage_item.rounds, key=lambda r: r.id) for stage_item in stage_items
+        ]
+        round_count = max((len(rounds) for rounds in rounds_per_item), default=0)
 
-        stage_start_time = time_last_match_from_previous_stage
-        stage_position_in_schedule = position_last_match_from_previous_stage
+        for round_index in range(round_count):
+            # A "wave" is the round_index-th round of every stage item in this
+            # stage. All matches in a wave are mutually conflict-free (within a
+            # round a team plays at most once, and different stage items have
+            # disjoint teams), so they can be played in parallel across courts.
+            wave_matches = [
+                match
+                for rounds in rounds_per_item
+                if round_index < len(rounds)
+                for match in rounds[round_index].matches
+            ]
+            if len(wave_matches) < 1:
+                continue
 
-        for i, stage_item in enumerate(stage_items):
-            court = courts[min(i, len(courts) - 1)]
-            start_time = stage_start_time
-            position_in_schedule = stage_position_in_schedule
-            for round_ in sorted(stage_item.rounds, key=lambda r: r.id):
-                for match in round_.matches:
-                    if match.start_time is None and match.position_in_schedule is None:
-                        await sql_reschedule_match_and_determine_duration_and_margin(
-                            court.id,
-                            start_time,
-                            position_in_schedule,
-                            match,
-                            tournament,
-                        )
+            # Spread the wave across all courts; overflow (more matches than
+            # courts) rolls onto later rows of the same courts. Rotate the
+            # starting court each wave so the overflow doesn't always pile onto
+            # the first court. Only the court assignment and the relative order
+            # of position_in_schedule matter here: update_start_times_of_matches
+            # below assigns the actual per-court start times (so rows line up
+            # across courts) and renumbers position_in_schedule per court (so a
+            # dragged card's per-court index matches what the reschedule
+            # endpoint validates against).
+            for match_index, match in enumerate(wave_matches):
+                court = courts[(match_index + round_index) % len(courts)]
 
-                    start_time += timedelta(minutes=match.duration_minutes)
-                    position_in_schedule += 1
-
-                    time_last_match_from_previous_stage = max(
-                        time_last_match_from_previous_stage, start_time
+                if match.start_time is None and match.position_in_schedule is None:
+                    await sql_reschedule_match_and_determine_duration_and_margin(
+                        court.id,
+                        tournament.start_time,
+                        position_in_schedule,
+                        match,
+                        tournament,
                     )
 
-                    position_last_match_from_previous_stage = max(
-                        position_last_match_from_previous_stage, position_in_schedule
-                    )
+                position_in_schedule += 1
 
     await update_start_times_of_matches(tournament_id)
 

@@ -8,6 +8,7 @@ from bracket.models.db.util import StageItemWithRounds
 from bracket.sql.rankings import get_default_rankings_in_tournament
 from bracket.sql.stage_item_inputs import sql_create_stage_item_input
 from bracket.sql.stages import get_full_tournament_details
+from bracket.utils.i18n import tr
 from bracket.utils.id_types import StageItemId, TournamentId
 
 
@@ -78,7 +79,7 @@ async def get_stage_item(
     if len(stages) < 1 or len(stages[0].stage_items) < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Stage item doesn't exist",
+            detail=tr("阶段项目不存在"),
         )
 
     return stages[0].stage_items[0]

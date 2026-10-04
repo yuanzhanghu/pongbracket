@@ -107,4 +107,4 @@ async def test_update_stage_item_input_invalid_team(
             json={"team_id": -42},
         )
 
-    assert response == {"detail": "Could not find team with id -42"}
+    assert response == {"detail": "找不到 ID 为 -42 的队伍"}

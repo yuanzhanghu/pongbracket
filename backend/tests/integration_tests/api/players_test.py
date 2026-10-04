@@ -4,11 +4,21 @@ from bracket.database import database
 from bracket.models.db.player import Player
 from bracket.schema import players
 from bracket.utils.db import fetch_one_parsed_certain
-from bracket.utils.dummy_records import DUMMY_MOCK_TIME, DUMMY_PLAYER1, DUMMY_TEAM1
+from bracket.utils.dummy_records import (
+    DUMMY_MOCK_TIME,
+    DUMMY_PLAYER1,
+    DUMMY_PLAYER2,
+    DUMMY_TEAM1,
+)
 from bracket.utils.http import HTTPMethod
 from tests.integration_tests.api.shared import SUCCESS_RESPONSE, send_tournament_request
 from tests.integration_tests.models import AuthContext
-from tests.integration_tests.sql import assert_row_count_and_clear, inserted_player, inserted_team
+from tests.integration_tests.sql import (
+    assert_row_count_and_clear,
+    inserted_player,
+    inserted_player_in_team,
+    inserted_team,
+)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -29,7 +39,6 @@ async def test_players_endpoint(
                             "id": player_inserted.id,
                             "active": True,
                             "elo_score": "0.0",
-                            "swiss_score": "0.0",
                             "wins": 0,
                             "draws": 0,
                             "losses": 0,
@@ -40,6 +49,33 @@ async def test_players_endpoint(
                     "count": 1,
                 },
             }
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_players_endpoint_not_in_team_filter(
+    startup_and_shutdown_uvicorn_server: None, auth_context: AuthContext
+) -> None:
+    # Team membership lives in players_x_teams, so the filter must not look for a
+    # column on players — that used to make the endpoint fail outright.
+    async with (
+        inserted_team(
+            DUMMY_TEAM1.model_copy(update={"tournament_id": auth_context.tournament.id})
+        ) as team_inserted,
+        inserted_player(
+            DUMMY_PLAYER1.model_copy(update={"tournament_id": auth_context.tournament.id})
+        ) as free_player,
+        inserted_player_in_team(
+            DUMMY_PLAYER2.model_copy(update={"tournament_id": auth_context.tournament.id}),
+            team_inserted.id,
+        ),
+    ):
+        response = await send_tournament_request(
+            HTTPMethod.GET, "players?not_in_team=true", auth_context, {}
+        )
+        assert [player["id"] for player in response["data"]["players"]] == [free_player.id]
+        assert response["data"]["count"] == 1
+
+    await assert_row_count_and_clear(players, 0)
 
 
 @pytest.mark.asyncio(loop_scope="session")

@@ -1,260 +1,109 @@
-<p align="center">
-  <img
-    width="500"
-    src="frontend/public/favicon-wide.svg"
-    alt="Bracket - Tournament System"
-  />
-</p>
+# PongBracket · 加华积分网
 
-<p align="center">
-  <a href="https://github.com/evroon/bracket/actions"
-    ><img
-      src="https://img.shields.io/github/actions/workflow/status/evroon/bracket/backend.yml"
-      alt="build status"
-  /></a>
-  <a href="https://crowdin.com/project/bracket"
-    ><img
-      src="https://badges.crowdin.net/bracket/localized.svg"
-      alt="translations"
-  /></a>
-  <a href="https://github.com/evroon/bracket/commits/"
-    ><img
-      src="https://img.shields.io/github/last-commit/evroon/bracket"
-      alt="last commit"
-  /></a>
-  <a href="https://github.com/evroon/bracket/releases"
-    ><img
-      src="https://img.shields.io/github/v/release/evroon/bracket"
-      alt="release"
-  /></a>
-  <a href="https://codecov.io/gh/evroon/bracket"
-    ><img
-      src="https://codecov.io/gh/evroon/bracket/branch/master/graph/badge.svg?token=YJL0DVPFFG"
-      alt="codecov"
-  /></a>
-</p>
-<p align="center">
-  <a href="https://www.bracketapp.nl/demo">Demo</a>
-  ·
-  <a href="https://docs.bracketapp.nl">Documentation</a>
-  ·
-  <a href="https://docs.bracketapp.nl/docs/running-bracket/quickstart">Quickstart</a>
-  ·
-  <a href="https://github.com/evroon/bracket">GitHub</a>
-  ·
-  <a href="https://github.com/evroon/bracket/releases">Releases</a>
-</p>
-<p align="center">
-<a href="https://trendshift.io/repositories/13714" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13714" alt="evroon/bracket | Trendshift" width="250" height="55"/></a>
-</p>
-<h1></h1>
+**PongBracket** is a table-tennis tournament and cross-tournament rating system. It is the code
+behind **[加华积分网 (Jiahua Rating Network)](https://bracket.ai1to1.com)**, a site where clubs and
+players in the Canadian-Chinese table-tennis community run tournaments and keep a shared rating.
 
-Tournament system meant to be easy to use. Bracket is written in async Python (with
-[FastAPI](https://fastapi.tiangolo.com)) and [Vite](https://vite.dev/) as frontend using the
-[Mantine](https://mantine.dev/) library.
+- 🌐 Live site: <https://bracket.ai1to1.com>
+- 📖 使用指南 / User guide: <https://bracket.ai1to1.com/guide/index.html>
+  - 个人积分赛完整流程演示 (rated individual tournament, end to end):
+    [中文](https://bracket.ai1to1.com/guide/rating.html) ·
+    [English](https://bracket.ai1to1.com/guide/rating.en.html) ·
+    [Français](https://bracket.ai1to1.com/guide/rating.fr.html)
+  - 个人赛（非积分）完整流程演示 (non-rated tournament):
+    [中文](https://bracket.ai1to1.com/guide/basic.html) ·
+    [English](https://bracket.ai1to1.com/guide/basic.en.html) ·
+    [Français](https://bracket.ai1to1.com/guide/basic.fr.html)
 
-It has the following features:
-- Supports **single elimination, round-robin and swiss** formats.
-- **Build your tournament structure** with multiple stages that can have multiple groups/brackets in
-  them.
-- **Drag-and-drop matches** to different courts or reschedule them to another start time.
-- Various **dashboard pages** are available that can be presented to the public, customized with a
-  logo.
-- Create/update **teams**, and add players to **teams**.
-- Create **multiple clubs**, with **multiple tournaments** per club.
-- **Swiss tournaments** can be handled dynamically, with automatic scheduling of matches.
+## Where this comes from
 
-<img alt="" src="docs/content/img/bracket-screenshot-design.png" width="100%" />
+PongBracket is a fork of **[evroon/bracket](https://github.com/evroon/bracket)**, an open-source
+tournament system by Erik Vroon and contributors, written in async Python
+([FastAPI](https://fastapi.tiangolo.com)) with a [Vite](https://vite.dev/) +
+[Mantine](https://mantine.dev/) frontend. The upstream git history is preserved here as-is; all
+changes made for 加华积分网 sit on top of it. Many thanks to the upstream authors. Please see the
+[upstream repository](https://github.com/evroon/bracket) and its
+[documentation](https://docs.bracketapp.nl) for the original project.
 
-<p align="center">
-<a href="https://docs.bracketapp.nl"><strong>Explore the Bracket docs&nbsp;&nbsp;▶</strong></a>
-</p>
+Like upstream, this project is licensed under the **GNU AGPL-3.0** (see [LICENSE](LICENSE)).
 
-# Live Demo
-A demo is available for free at <https://www.bracketapp.nl/demo>. The demo lasts for 30 minutes, after which
-your data will de deleted. 
+## What this fork adds
 
-# Quickstart
-To quickly run bracket to see how it works, clone it and run `docker compose up`:
+**Cross-tournament rating (加华积分 / CanadaChinaTT)**
+- A rating pool that spans tournaments. Ratings change match by match using the
+  [ChinaTT (开球网)](http://www.kaiqiu.wang) exchange table: an upset earns more than an
+  expected win.
+- Rating options are set when a tournament is created and can't be changed afterwards. Players
+  join in one click. Initial ratings are reviewed by a site admin, and a tournament is settled
+  with one button.
+- 我的积分 (My rating) page with points history and a rating curve. Leaderboards show ratings per
+  category.
+
+**Table-tennis-oriented tournament flow**
+- Individual tournaments: each participant is an account. Non-rated tournaments can also use
+  free-text participant names.
+- Round-robin groups auto-created and auto-seeded from a participant total (小组1, 小组2, …). Ties
+  are broken with the ITTF group rules.
+- Knockout stages built from group finishers, with rank-weighted spreading so players from the same
+  group stay apart, automatic byes, and seeding from the top or bottom finishers.
+- Single-elimination bracket view with connector lines. Swiss stages are removed.
+- One-tap score entry: the score modal is a grid of `X:Y` result buttons, plus forfeit and
+  clear-score options.
+- 填分和结果 (Scores & results) page: a group grid plus a clickable bracket in one view, with
+  standings showing 局分 (games) and 小分 (points).
+
+**Roles, sharing and spectators**
+- Scorer (记分员) role: someone who can enter scores for a tournament without owning it.
+- Public, read-only results for spectators without logging in, and a public showcase page for
+  series placements.
+- Follow/favorite tournaments, a "joinable tournaments" tab, and archived tournaments.
+- Clubs are implicit (one personal club per account). Users log in by name or email, and email is
+  optional.
+
+**Localization**
+- Full Simplified Chinese / English / French coverage across the UI, the API messages and the
+  guide screenshots, with a language switcher.
+
+**Testing**
+- Backend unit and integration tests (pytest), plus a Playwright end-to-end suite in [`e2e/`](e2e)
+  covering the user-facing workflows. The checklist is in [`e2e/COVERAGE.md`](e2e/COVERAGE.md).
+
+The design notes for the rating system (in Chinese) are in
+[`design_CanadaChinaTT.html`](design_CanadaChinaTT.html).
+
+## Running locally
+
 ```bash
-git clone git@github.com:evroon/bracket.git
-cd bracket
-sudo docker compose up -d
+git clone https://github.com/yuanzhanghu/pongbracket.git
+cd pongbracket
+docker compose up -d --build
 ```
 
-This will start the backend and frontend of Bracket, as well as a postgres instance. You should now
-be able to view bracket at http://localhost:3000. You can log in with the following credentials:
+This builds the frontend and backend and starts a throwaway Postgres instance. Then open
+<http://localhost:8401>. The default admin login is the upstream one: `test@example.org` /
+`aeGhoe1ahng2Aezai0Dei6Aih6dieHoo`. **Change it before exposing an instance to anyone else.**
 
-- Username: `test@example.org`
-- Password: `aeGhoe1ahng2Aezai0Dei6Aih6dieHoo`.
+For hot-reload development, run `./run.sh`. It starts the backend on `:4002` and the Vite dev
+server pointed at it. You need `uv` and `pnpm` installed.
 
-To insert dummy rows into the database, run:
+Tests:
+
 ```bash
-docker exec bracket-backend uv run --no-dev ./cli.py create-dev-db
+cd backend && uv run pytest                 # backend (needs a Postgres test DB, see backend/ci.env)
+python3 -m pytest e2e/tests -q              # E2E, against the local instance on :8401
 ```
 
-See also the [quickstart docs](https://docs.bracketapp.nl/docs/running-bracket/quickstart).
+Deployment notes for the production setup (nginx behind Cloudflare) are in
+[`deploy/README.md`](deploy/README.md).
 
-# Usage
-Read the [usage guide](https://docs.bracketapp.nl/docs/usage/guide) for how to organize a tournament in Bracket from start to finish.
+## Privacy
 
-# Configuration
-Read the [configuration docs](https://docs.bracketapp.nl/docs/running-bracket/configuration) for how to configure Bracket.
+This repository contains source code only. No production database, user data or credentials are
+included. The upstream history is unchanged, and this fork's work is squashed into a single
+snapshot commit.
 
-Bracket's backend is configured using `.env` files (`prod.env` for production, `dev.env` for development etc.).
-But you can also configure Bracket using environment variables directly, for example by specifying them in the `docker-compose.yml`.
+## License
 
-The frontend doesn't can be configured by environment variables as well, as well as `.env` files using Vite's way of loading environment variables.
-
-# Running Bracket in production
-Read the [deployment docs](https://docs.bracketapp.nl/docs/deployment) for how to deploy Bracket and run it in production.
-
-Bracket can be run in Docker or by itself (using `uv` and `pnpm`).
-
-# Development setup
-Read the [development docs](https://docs.bracketapp.nl/docs/community/development) for how to run Bracket for development.
-
-Prerequisites are `pnpm`, `postgresql` and `uv` to run the frontend, database and backend.
-
-# Translations
-Based on your browser settings, your language should be automatically detected and loaded. For now,
-there's no manual way of choosing a different language.
-
-## Supported Languages
-To add/refine translations, [Crowdin](https://crowdin.com/project/bracket) is used.
-See the [docs](https://docs.bracketapp.nl/docs/community/contributing/#translating) for more information.
-
-# More screenshots
-<img alt="" src="docs/content/img/schedule_preview.png" width="50%" /><img alt=""
-src="docs/content/img/planning_preview.png" width="50%" /> <img alt=""
-src="docs/content/img/builder_preview.png" width="50%" /><img alt=""
-src="docs/content/img/standings_preview.png" width="50%" />
-
-# Help
-If you're having trouble getting Bracket up and running, or have a question about usage or configuration, feel free to ask.
-The best place to do this is by creating a [Discussion](https://github.com/evroon/bracket/discussions).
-
-# Supporting Bracket
-If you're using Bracket and would like to help support its development, that would be greatly appreciated!
-
-Several areas that we need a bit of help with at the moment are:
-- ⭐ **Star Bracket** on GitHub
-- 🌐 **Translating**: Help make Bracket available to non-native English speakers by adding your language (via [crowdin](https://crowdin.com/project/bracket))
-- 📣 **Spread the word** by sharing Bracket to help new users discover it
-- 🖥️ **Submit a PR** to add a new feature, fix a bug, extend/update the docs or something else
-
-See the [contribution docs](https://docs.bracketapp.nl/docs/community/contributing) for more information on how to contribute
-
-# Contributors
-<!-- readme: collaborators,contributors,dependabot/- -start -->
-<table>
-<tr>
-    <td align="center">
-        <a href="https://github.com/evroon">
-            <img src="https://avatars.githubusercontent.com/u/11857441?v=4" width="100;" alt="evroon"/>
-            <br />
-            <sub><b>Erik Vroon</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/robigan">
-            <img src="https://avatars.githubusercontent.com/u/35210888?v=4" width="100;" alt="robigan"/>
-            <br />
-            <sub><b>Null</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/nvanheuverzwijn">
-            <img src="https://avatars.githubusercontent.com/u/943226?v=4" width="100;" alt="nvanheuverzwijn"/>
-            <br />
-            <sub><b>Nicolas Vanheuverzwijn</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/sevi418">
-            <img src="https://avatars.githubusercontent.com/u/91365763?v=4" width="100;" alt="sevi418"/>
-            <br />
-            <sub><b>Sevi C</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/MaxRickettsUy">
-            <img src="https://avatars.githubusercontent.com/u/22103252?v=4" width="100;" alt="MaxRickettsUy"/>
-            <br />
-            <sub><b>Max Ricketts-Uy</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/djpiper28">
-            <img src="https://avatars.githubusercontent.com/u/13609136?v=4" width="100;" alt="djpiper28"/>
-            <br />
-            <sub><b>Danny Piper</b></sub>
-        </a>
-    </td></tr>
-<tr>
-    <td align="center">
-        <a href="https://github.com/ByteAfterlife">
-            <img src="https://avatars.githubusercontent.com/u/113946747?v=4" width="100;" alt="ByteAfterlife"/>
-            <br />
-            <sub><b>Byte</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/BachErik">
-            <img src="https://avatars.githubusercontent.com/u/75324423?v=4" width="100;" alt="BachErik"/>
-            <br />
-            <sub><b>BachErik</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/aminnairi">
-            <img src="https://avatars.githubusercontent.com/u/18418459?v=4" width="100;" alt="aminnairi"/>
-            <br />
-            <sub><b>Amin NAIRI</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/FelipeGdM">
-            <img src="https://avatars.githubusercontent.com/u/1054087?v=4" width="100;" alt="FelipeGdM"/>
-            <br />
-            <sub><b>Felipe Gomes De Melo</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/IzStriker">
-            <img src="https://avatars.githubusercontent.com/u/44909896?v=4" width="100;" alt="IzStriker"/>
-            <br />
-            <sub><b>IzStriker</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/jmillxyz">
-            <img src="https://avatars.githubusercontent.com/u/531476?v=4" width="100;" alt="jmillxyz"/>
-            <br />
-            <sub><b>Jon Miller</b></sub>
-        </a>
-    </td></tr>
-<tr>
-    <td align="center">
-        <a href="https://github.com/oscartobar">
-            <img src="https://avatars.githubusercontent.com/u/10423124?v=4" width="100;" alt="oscartobar"/>
-            <br />
-            <sub><b>Oscar Tobar Rios</b></sub>
-        </a>
-    </td>
-    <td align="center">
-        <a href="https://github.com/babeuh">
-            <img src="https://avatars.githubusercontent.com/u/60193302?v=4" width="100;" alt="babeuh"/>
-            <br />
-            <sub><b>Raphael Le Goaller</b></sub>
-        </a>
-    </td></tr>
-</table>
-<!-- readme: collaborators,contributors,dependabot/- -end -->
-
-# License
-Bracket is licensed under [AGPL-v3.0](https://choosealicense.com/licenses/agpl-3.0/).
-
-Please note that any contributions also fall under this license.
-
-See [LICENSE](LICENSE)
+[GNU Affero General Public License v3.0](LICENSE), inherited from
+[evroon/bracket](https://github.com/evroon/bracket). If you run a modified version as a network
+service, the AGPL requires you to offer its source to your users.

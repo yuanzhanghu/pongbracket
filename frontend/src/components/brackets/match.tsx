@@ -44,6 +44,7 @@ export default function Match({
   match,
   readOnly,
   round,
+  onClickFrozen,
 }: {
   swrStagesResponse: SWRResponse<StagesWithStageItemsResponse>;
   swrUpcomingMatchesResponse: SWRResponse | null;
@@ -52,6 +53,13 @@ export default function Match({
   readOnly: boolean;
 
   round: RoundWithMatches;
+
+  // When readOnly because the tournament is frozen (settled), clicking a match
+  // card should surface the same "scores frozen" notification the RR GroupGrid
+  // cell shows (see results.tsx openMatchModal), instead of being a silent
+  // non-interactive div. When undefined, a read-only card stays a plain div
+  // (e.g. the stages bracket page, non-recorder viewers).
+  onClickFrozen?: () => void;
 }) {
   const { t } = useTranslation();
   const theme = useMantineTheme();
@@ -92,6 +100,16 @@ export default function Match({
   );
 
   if (readOnly) {
+    // A frozen (settled) tournament surfaces the freeze notification on click,
+    // consistent with the RR GroupGrid cell path; other read-only contexts stay
+    // a silent non-interactive div.
+    if (onClickFrozen != null) {
+      return (
+        <UnstyledButton className={classes.root} onClick={onClickFrozen}>
+          {bracket}
+        </UnstyledButton>
+      );
+    }
     return <div className={classes.root}>{bracket}</div>;
   }
 

@@ -1,30 +1,40 @@
 import {
   Button,
   Card,
+  Checkbox,
   Divider,
   Grid,
+  Group,
   Image,
   Modal,
   NumberInput,
+  SegmentedControl,
   Select,
+  Stack,
   Text,
   UnstyledButton,
 } from '@mantine/core';
 import { UseFormReturnType, useForm } from '@mantine/form';
 import { GoPlus } from '@react-icons/all-files/go/GoPlus';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SWRResponse } from 'swr';
 
+import { teamNamingContext } from '@components/utils/team_naming';
 import { Translator } from '@components/utils/types';
 import {
   StageItemInputOptionsResponse,
+  StageItemWithRounds,
   StageWithStageItems,
   StagesWithStageItemsResponse,
   Tournament,
 } from '@openapi';
 import { getStageItemLookup, getTeamsLookup } from '@services/lookups';
-import { createStageItem } from '@services/stage_item';
+import {
+  createEliminationFromSources,
+  createRoundRobinGroups,
+  createStageItem,
+} from '@services/stage_item';
 import classes from './create_stage_item.module.css';
 
 function StageSelectCard({
@@ -70,10 +80,12 @@ function StageSelectCard({
 export function CreateStagesFromTemplateButtons({
   selectedType,
   setSelectedType,
+  teamContext,
   t,
 }: {
-  selectedType: 'ROUND_ROBIN' | 'SWISS' | 'SINGLE_ELIMINATION';
-  setSelectedType: (type: 'ROUND_ROBIN' | 'SWISS' | 'SINGLE_ELIMINATION') => void;
+  selectedType: 'ROUND_ROBIN' | 'SINGLE_ELIMINATION';
+  setSelectedType: (type: 'ROUND_ROBIN' | 'SINGLE_ELIMINATION') => void;
+  teamContext?: 'individual';
   t: Translator;
 }) {
   return (
@@ -81,7 +93,7 @@ export function CreateStagesFromTemplateButtons({
       <Grid.Col span={{ base: 12, sm: 4 }}>
         <StageSelectCard
           title={t('round_robin_label')}
-          description={t('round_robin_description')}
+          description={t('round_robin_description', { context: teamContext })}
           image="/icons/group-stage-item.svg"
           selected={selectedType === 'ROUND_ROBIN'}
           onClick={() => {
@@ -92,7 +104,7 @@ export function CreateStagesFromTemplateButtons({
       <Grid.Col span={{ base: 12, sm: 4 }}>
         <StageSelectCard
           title={t('single_elimination_label')}
-          description={t('single_elimination_description')}
+          description={t('single_elimination_description', { context: teamContext })}
           image="/icons/single-elimination-stage-item.svg"
           selected={selectedType === 'SINGLE_ELIMINATION'}
           onClick={() => {
@@ -100,22 +112,17 @@ export function CreateStagesFromTemplateButtons({
           }}
         />
       </Grid.Col>
-      <Grid.Col span={{ base: 12, sm: 4 }}>
-        <StageSelectCard
-          title={t('swiss_label')}
-          description={t('swiss_description')}
-          image="/icons/swiss-stage-item.svg"
-          selected={selectedType === 'SWISS'}
-          onClick={() => {
-            setSelectedType('SWISS');
-          }}
-        />
-      </Grid.Col>
     </Grid>
   );
 }
 
-function TeamCountSelectElimination({ form }: { form: UseFormReturnType<any> }) {
+function TeamCountSelectElimination({
+  form,
+  teamContext,
+}: {
+  form: UseFormReturnType<any>;
+  teamContext?: 'individual';
+}) {
   const { t } = useTranslation();
   const data = [
     { value: '2', label: '2' },
@@ -128,7 +135,7 @@ function TeamCountSelectElimination({ form }: { form: UseFormReturnType<any> }) 
     <Select
       withAsterisk
       data={data}
-      label={t('team_count_select_elimination_label')}
+      label={t('team_count_select_elimination_label', { context: teamContext })}
       placeholder={t('team_count_select_elimination_placeholder')}
       searchable
       limit={20}
@@ -139,12 +146,18 @@ function TeamCountSelectElimination({ form }: { form: UseFormReturnType<any> }) 
   );
 }
 
-function TeamCountInputRoundRobin({ form }: { form: UseFormReturnType<any> }) {
+function TeamCountInputRoundRobin({
+  form,
+  teamContext,
+}: {
+  form: UseFormReturnType<any>;
+  teamContext?: 'individual';
+}) {
   const { t } = useTranslation();
   return (
     <NumberInput
       withAsterisk
-      label={t('team_count_input_round_robin_label')}
+      label={t('team_count_input_round_robin_label', { context: teamContext })}
       placeholder=""
       mt="1rem"
       maw="50%"
@@ -153,12 +166,160 @@ function TeamCountInputRoundRobin({ form }: { form: UseFormReturnType<any> }) {
   );
 }
 
-function TeamCountInput({ form }: { form: UseFormReturnType<any> }) {
+function NumGroupsInputRoundRobin({
+  form,
+  teamContext,
+}: {
+  form: UseFormReturnType<any>;
+  teamContext?: 'individual';
+}) {
+  const { t } = useTranslation();
+  return (
+    <NumberInput
+      withAsterisk
+      label={t('num_groups_label')}
+      description={t('num_groups_description', { context: teamContext })}
+      placeholder=""
+      mt="1rem"
+      maw="50%"
+      min={1}
+      {...form.getInputProps('num_groups')}
+    />
+  );
+}
+
+function GroupMethodInputRoundRobin({ form }: { form: UseFormReturnType<any> }) {
+  const { t } = useTranslation();
+  return (
+    <Stack mt="1rem" gap="0.25rem">
+      <Text fw={500} size="sm">
+        {t('group_method_label')}
+      </Text>
+      <SegmentedControl
+        maw="24rem"
+        data={[
+          { value: 'snake', label: t('group_method_snake') },
+          { value: 'block', label: t('group_method_block') },
+        ]}
+        {...form.getInputProps('group_method')}
+      />
+    </Stack>
+  );
+}
+
+type SourceSelections = Record<number, number>;
+type TakeOption = 'top' | 'bottom';
+
+function EliminationSourcePicker({
+  sourceItems,
+  sources,
+  setSources,
+  take,
+  setTake,
+}: {
+  sourceItems: StageItemWithRounds[];
+  sources: SourceSelections;
+  setSources: (updater: (prev: SourceSelections) => SourceSelections) => void;
+  take: TakeOption;
+  setTake: (take: TakeOption) => void;
+}) {
+  const { t } = useTranslation();
+  const total = Object.values(sources).reduce((sum, positions) => sum + (positions || 0), 0);
+
+  return (
+    <Stack mt="1rem" gap="0.5rem">
+      <Text fw={600}>{t('elimination_sources_label')}</Text>
+      <Text size="sm" c="dimmed">
+        {t('elimination_sources_description')}
+      </Text>
+      <SegmentedControl
+        maw="24rem"
+        value={take}
+        onChange={(value) => setTake(value as TakeOption)}
+        data={[
+          { value: 'top', label: t('take_top_option') },
+          { value: 'bottom', label: t('take_bottom_option') },
+        ]}
+      />
+      {sourceItems.map((item) => {
+        const checked = sources[item.id] != null;
+        return (
+          <Group key={item.id} justify="space-between" maw="32rem" wrap="nowrap">
+            <Checkbox
+              label={item.name}
+              checked={checked}
+              onChange={(event) =>
+                setSources((prev) => {
+                  const next = { ...prev };
+                  if (event.currentTarget.checked) next[item.id] = item.team_count;
+                  else delete next[item.id];
+                  return next;
+                })
+              }
+            />
+            <NumberInput
+              w="9rem"
+              min={1}
+              max={item.team_count}
+              label={t('positions_to_advance_label')}
+              disabled={!checked}
+              value={sources[item.id] ?? item.team_count}
+              onChange={(value) =>
+                setSources((prev) => ({ ...prev, [item.id]: Number(value) || 1 }))
+              }
+            />
+          </Group>
+        );
+      })}
+      <Text size="sm" mt="0.25rem">
+        {`${t('qualifiers_total_label')}: ${total}`}
+      </Text>
+    </Stack>
+  );
+}
+
+function TeamCountInput({
+  form,
+  sourceItems,
+  sources,
+  setSources,
+  take,
+  setTake,
+  teamContext,
+}: {
+  form: UseFormReturnType<any>;
+  sourceItems: StageItemWithRounds[];
+  sources: SourceSelections;
+  setSources: (updater: (prev: SourceSelections) => SourceSelections) => void;
+  take: TakeOption;
+  setTake: (take: TakeOption) => void;
+  teamContext?: 'individual';
+}) {
   if (form.values.type === 'SINGLE_ELIMINATION') {
-    return <TeamCountSelectElimination form={form} />;
+    if (sourceItems.length > 0) {
+      return (
+        <EliminationSourcePicker
+          sourceItems={sourceItems}
+          sources={sources}
+          setSources={setSources}
+          take={take}
+          setTake={setTake}
+        />
+      );
+    }
+    return <TeamCountSelectElimination form={form} teamContext={teamContext} />;
+  }
+  if (form.values.type === 'ROUND_ROBIN') {
+    return (
+      <>
+        <TeamCountInputRoundRobin form={form} teamContext={teamContext} />
+        <NumGroupsInputRoundRobin form={form} teamContext={teamContext} />
+        <GroupMethodInputRoundRobin form={form} />
+      </>
+    );
   }
 
-  return <TeamCountInputRoundRobin form={form} />;
+  return <TeamCountInputRoundRobin form={form} teamContext={teamContext} />;
 }
 
 function getTeamCount(values: any) {
@@ -170,7 +331,9 @@ function getTeamCount(values: any) {
 }
 
 interface FormValues {
-  type: 'ROUND_ROBIN' | 'SWISS' | 'SINGLE_ELIMINATION';
+  type: 'ROUND_ROBIN' | 'SINGLE_ELIMINATION';
+  num_groups: number;
+  group_method: 'snake' | 'block';
   team_count_round_robin: number;
   team_count_elimination: number;
 }
@@ -186,15 +349,48 @@ export function CreateStageItemModal({
   swrAvailableInputsResponse: SWRResponse<StageItemInputOptionsResponse>;
 }) {
   const { t } = useTranslation();
+  const teamContext = teamNamingContext(tournament);
   const [opened, setOpened] = useState(false);
+  const [sources, setSources] = useState<SourceSelections>({});
+  const [take, setTake] = useState<TakeOption>('top');
 
   const form = useForm<FormValues>({
-    initialValues: { type: 'ROUND_ROBIN', team_count_round_robin: 4, team_count_elimination: 2 },
+    initialValues: {
+      type: 'ROUND_ROBIN',
+      num_groups: 2,
+      group_method: 'snake',
+      team_count_round_robin: 4,
+      team_count_elimination: 2,
+    },
     validate: {
-      team_count_round_robin: (value) => (value >= 2 ? null : t('at_least_two_team_validation')),
-      team_count_elimination: (value) => (value >= 2 ? null : t('at_least_two_team_validation')),
+      num_groups: (value) => (value >= 1 ? null : t('at_least_one_group_validation')),
+      team_count_round_robin: (value) =>
+        value >= 2 ? null : t('at_least_two_team_validation', { context: teamContext }),
+      team_count_elimination: (value) =>
+        value >= 2 ? null : t('at_least_two_team_validation', { context: teamContext }),
     },
   });
+
+  // Stage items from earlier stages can feed a knockout (groups -> elimination, or a
+  // previous elimination -> the next one).
+  const allStages = swrStagesResponse.data?.data ?? [];
+  const currentStageIndex = allStages.findIndex((s) => s.id === stage.id);
+  const sourceItems: StageItemWithRounds[] = allStages
+    .slice(0, currentStageIndex < 0 ? 0 : currentStageIndex)
+    .flatMap((s) => s.stage_items);
+
+  // Default every source to "all positions advance" each time the modal opens.
+  useEffect(() => {
+    if (opened) {
+      const initial: SourceSelections = {};
+      sourceItems.forEach((item) => {
+        initial[item.id] = item.team_count;
+      });
+      setSources(initial);
+      setTake('top');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened]);
 
   // TODO: Refactor lookups into one request.
   const teamsMap = getTeamsLookup(tournament != null ? tournament.id : -1);
@@ -214,7 +410,25 @@ export function CreateStageItemModal({
       >
         <form
           onSubmit={form.onSubmit(async (values) => {
-            await createStageItem(tournament.id, stage.id, values.type, getTeamCount(values));
+            if (values.type === 'ROUND_ROBIN') {
+              await createRoundRobinGroups(
+                tournament.id,
+                stage.id,
+                values.num_groups,
+                values.team_count_round_robin,
+                values.group_method
+              );
+            } else if (values.type === 'SINGLE_ELIMINATION' && sourceItems.length > 0) {
+              const selected = Object.entries(sources)
+                .filter(([, positions]) => positions >= 1)
+                .map(([stage_item_id, positions]) => ({
+                  stage_item_id: Number(stage_item_id),
+                  positions: Number(positions),
+                }));
+              await createEliminationFromSources(tournament.id, stage.id, null, selected, take);
+            } else {
+              await createStageItem(tournament.id, stage.id, values.type, getTeamCount(values));
+            }
             await swrStagesResponse.mutate();
             await swrAvailableInputsResponse.mutate();
             setOpened(false);
@@ -226,9 +440,18 @@ export function CreateStageItemModal({
             setSelectedType={(_type) => {
               form.setFieldValue('type', _type);
             }}
+            teamContext={teamContext}
           />
           <Divider mt="1rem" />
-          <TeamCountInput form={form} />
+          <TeamCountInput
+            form={form}
+            sourceItems={sourceItems}
+            sources={sources}
+            setSources={setSources}
+            take={take}
+            setTake={setTake}
+            teamContext={teamContext}
+          />
 
           <Button fullWidth mt="1.5rem" color="green" type="submit">
             {t('create_stage_item_button')}

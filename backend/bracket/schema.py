@@ -40,6 +40,19 @@ tournaments = Table(
         server_default="OPEN",
         index=True,
     ),
+    # Individual tournament (one team = one player). Gate for the rating system.
+    Column("is_individual", Boolean, nullable=False, server_default="f"),
+    # NULL = not rated. FK to a global rating category.
+    Column("rating_category_id", BigInteger, ForeignKey("rating_categories.id"), nullable=True),
+    # Monotonic ordering assigned at settlement (sort truth within a category).
+    Column("settled_seq", BigInteger, nullable=True),
+    Column("settled_at", DateTimeTZ, nullable=True),
+    # Set when the owner requests settlement while seeds are still PENDING; the
+    # tournament then waits in the admin "批准并结算" queue. NULL once settled.
+    Column("settlement_requested_at", DateTimeTZ, nullable=True),
+    # Manual placement for the public showcase page: a JSON array of team ids in
+    # finishing order. NULL = derive the placement from the scores.
+    Column("showcase_ranking", Text, nullable=True),
 )
 
 stages = Table(
@@ -65,7 +78,6 @@ stage_items = Table(
         "type",
         Enum(
             "SINGLE_ELIMINATION",
-            "SWISS",
             "ROUND_ROBIN",
             name="stage_type",
         ),
@@ -139,6 +151,9 @@ matches = Table(
     Column("stage_item_input1_score", Integer, nullable=False),
     Column("stage_item_input2_score", Integer, nullable=False),
     Column("position_in_schedule", Integer, nullable=True),
+    Column("games", Text, nullable=True),
+    Column("best_of", Integer, nullable=False, server_default="3"),
+    Column("forfeit_input", Integer, nullable=True),
 )
 
 teams = Table(
@@ -150,11 +165,11 @@ teams = Table(
     Column("tournament_id", BigInteger, ForeignKey("tournaments.id"), index=True, nullable=False),
     Column("active", Boolean, nullable=False, index=True, server_default="t"),
     Column("elo_score", Float, nullable=False, server_default="0"),
-    Column("swiss_score", Float, nullable=False, server_default="0"),
     Column("wins", Integer, nullable=False, server_default="0"),
     Column("draws", Integer, nullable=False, server_default="0"),
     Column("losses", Integer, nullable=False, server_default="0"),
     Column("logo_path", String, nullable=True),
+    Column("sort_order", Integer, nullable=False, server_default="0"),
 )
 
 players = Table(
@@ -165,7 +180,6 @@ players = Table(
     Column("created", DateTimeTZ, nullable=False, server_default=func.now()),
     Column("tournament_id", BigInteger, ForeignKey("tournaments.id"), index=True, nullable=False),
     Column("elo_score", Float, nullable=False),
-    Column("swiss_score", Float, nullable=False),
     Column("wins", Integer, nullable=False),
     Column("draws", Integer, nullable=False),
     Column("losses", Integer, nullable=False),
@@ -176,7 +190,7 @@ users = Table(
     "users",
     metadata,
     Column("id", BigInteger, primary_key=True, index=True),
-    Column("email", String, nullable=False, index=True, unique=True),
+    Column("email", String, nullable=True, index=True, unique=True),
     Column("name", String, nullable=False),
     Column("password_hash", String, nullable=False),
     Column("created", DateTimeTZ, nullable=False, server_default=func.now()),
@@ -189,6 +203,11 @@ users = Table(
         ),
         nullable=False,
     ),
+    # Site admin: maintains rating categories and reviews initial ratings.
+    Column("is_admin", Boolean, nullable=False, server_default="f"),
+    # Bumped on a password change; tokens issued under an older generation stop
+    # authenticating (see check_jwt_and_get_user).
+    Column("token_version", BigInteger, nullable=False, server_default="0"),
 )
 
 users_x_clubs = Table(
@@ -237,4 +256,141 @@ rankings = Table(
     Column("draw_points", Float, nullable=False),
     Column("loss_points", Float, nullable=False),
     Column("add_score_points", Boolean, nullable=False),
+)
+
+# --- Cross-tournament rating system (CanadaChinaTT) ---
+
+rating_categories = Table(
+    "rating_categories",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column("key", String, nullable=False, unique=True),
+    Column("name", String, nullable=False),
+    Column("algorithm", String, nullable=False, server_default="chinatt"),
+    Column("created", DateTimeTZ, nullable=False, server_default=func.now()),
+)
+
+player_ratings = Table(
+    "player_ratings",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column(
+        "category_id",
+        BigInteger,
+        ForeignKey("rating_categories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("initial_rating", Integer, nullable=False),
+    Column("current_rating", Integer, nullable=False),
+    Column(
+        "status",
+        Enum(
+            "PENDING",
+            "ACTIVE",
+            name="player_rating_status",
+        ),
+        nullable=False,
+        server_default="PENDING",
+    ),
+    Column("approved_by", BigInteger, ForeignKey("users.id"), nullable=True),
+    Column("approved_at", DateTimeTZ, nullable=True),
+    Column("matches_played", Integer, nullable=False, server_default="0"),
+    Column("last_updated", DateTimeTZ, nullable=False, server_default=func.now()),
+    UniqueConstraint("category_id", "user_id"),
+)
+
+rating_events = Table(
+    "rating_events",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column(
+        "category_id",
+        BigInteger,
+        ForeignKey("rating_categories.id"),
+        nullable=False,
+        index=True,
+    ),
+    # RESTRICT: ledger rows must not dangle when upstream rows are deleted.
+    Column("match_id", BigInteger, ForeignKey("matches.id", ondelete="RESTRICT"), nullable=False),
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
+    Column("opponent_id", BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "tournament_id",
+        BigInteger,
+        ForeignKey("tournaments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    ),
+    Column("rating_before", Integer, nullable=False),
+    Column("rating_after", Integer, nullable=False),
+    Column("delta", Integer, nullable=False),
+    Column(
+        "result",
+        Enum(
+            "W",
+            "L",
+            name="rating_event_result",
+        ),
+        nullable=False,
+    ),
+    Column("created", DateTimeTZ, nullable=False, server_default=func.now()),
+)
+
+teams_x_users = Table(
+    "teams_x_users",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column("team_id", BigInteger, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "tournament_id",
+        BigInteger,
+        ForeignKey("tournaments.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    UniqueConstraint("team_id"),
+    UniqueConstraint("tournament_id", "user_id"),
+)
+
+user_trusted_managers = Table(
+    "user_trusted_managers",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("manager_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column("created", DateTimeTZ, nullable=False, server_default=func.now()),
+    UniqueConstraint("user_id", "manager_id"),
+)
+
+tournament_scorers = Table(
+    "tournament_scorers",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column(
+        "tournament_id",
+        BigInteger,
+        ForeignKey("tournaments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    UniqueConstraint("tournament_id", "user_id"),
+)
+
+tournament_favorites = Table(
+    "tournament_favorites",
+    metadata,
+    Column("id", BigInteger, primary_key=True, index=True, autoincrement=True),
+    Column("user_id", BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "tournament_id",
+        BigInteger,
+        ForeignKey("tournaments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    ),
+    Column("created", DateTimeTZ, nullable=False, server_default=func.now()),
+    UniqueConstraint("user_id", "tournament_id"),
 )

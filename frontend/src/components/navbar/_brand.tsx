@@ -1,18 +1,15 @@
-import { Center, Group, Image, Text, Title, UnstyledButton } from '@mantine/core';
+import { Center, Group, Text, Title, UnstyledButton } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 
 import PreloadLink from '@components/utils/link';
 
 export function Brand() {
+  const { t } = useTranslation();
   return (
     <Center mr="1rem" miw="12rem">
       <UnstyledButton component={PreloadLink} href="/">
         <Group>
-          <Image
-            style={{ width: '38px', marginRight: '0px' }}
-            src="/favicon.svg"
-            alt="Bracket logg"
-          />
-          <Title style={{ height: '38px', marginBottom: '0.4rem' }}>Bracket</Title>
+          <Title order={2}>{t('site_name')}</Title>
         </Group>
       </UnstyledButton>
     </Center>
@@ -20,17 +17,12 @@ export function Brand() {
 }
 
 export function BrandFooter() {
+  const { t } = useTranslation();
   return (
     <Center mr="1rem">
       <Center>
-        <Image
-          mb="0.25rem"
-          style={{ width: '32px', marginRight: '0px' }}
-          src="/favicon.svg"
-          alt="Bracket logg"
-        />
-        <Text size="xl" ml="0.75rem">
-          Bracket
+        <Text size="lg" ml="0.75rem">
+          {t('site_name')}
         </Text>
       </Center>
     </Center>
