@@ -74,9 +74,26 @@ export default function LandingPage() {
     { src: guideShot('bracket', i18n), caption: t('landing_shot_bracket') },
   ];
 
+  // Shown both in the top-left corner and in the footer.
+  const sourceLink = (
+    <Anchor
+      href="https://github.com/yuanzhanghu/pongbracket"
+      target="_blank"
+      rel="noopener noreferrer"
+      c="dimmed"
+      fz="sm"
+    >
+      <Group gap={6}>
+        <IconBrandGithub size={18} />
+        {t('landing_source_code')}
+      </Group>
+    </Anchor>
+  );
+
   return (
     <Container size="lg" px="xs">
-      <Group justify="flex-end" mt="xs">
+      <Group justify="space-between" mt="xs">
+        {sourceLink}
         <LanguageSwitcher />
       </Group>
 
@@ -159,18 +176,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <Group justify="center" mb="xl">
-        <Anchor
-          href="https://github.com/yuanzhanghu/pongbracket"
-          target="_blank"
-          rel="noopener noreferrer"
-          c="dimmed"
-          fz="sm"
-        >
-          <Group gap={6}>
-            <IconBrandGithub size={18} />
-            {t('landing_source_code')}
-          </Group>
-        </Anchor>
+        {sourceLink}
       </Group>
     </Container>
   );
