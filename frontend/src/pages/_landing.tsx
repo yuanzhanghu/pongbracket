@@ -1,4 +1,5 @@
 import {
+  Anchor,
   Box,
   Button,
   Card,
@@ -14,6 +15,7 @@ import {
 import {
   IconBinaryTree,
   IconBook,
+  IconBrandGithub,
   IconCalendar,
   IconDeviceTv,
   IconListNumbers,
@@ -154,6 +156,22 @@ export default function LandingPage() {
           {t('sign_in_title')}
         </Button>
       </Box>
+
+      {/* Footer */}
+      <Group justify="center" mb="xl">
+        <Anchor
+          href="https://github.com/yuanzhanghu/pongbracket"
+          target="_blank"
+          rel="noopener noreferrer"
+          c="dimmed"
+          fz="sm"
+        >
+          <Group gap={6}>
+            <IconBrandGithub size={18} />
+            {t('landing_source_code')}
+          </Group>
+        </Anchor>
+      </Group>
     </Container>
   );
 }
